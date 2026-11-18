@@ -57,10 +57,11 @@ export class Beast {
   update(dt, st) {
     const g = this.gait, p = st.phase * TAU;
     const K = 120, D = 16;                                   // ressort d'accroupissement : un peu d'inertie
-    this.crV += ((st.crouch - this.cr) * K - this.crV * D) * dt; this.cr += this.crV * dt;
+    this.crV += (((st.crouch || 0) - this.cr) * K - this.crV * D) * dt; this.cr += this.crV * dt;
     const cr = Math.max(0, this.cr) * g.crouch;
     const air = st.air >= 0 && st.air <= 1;
-    const reach = air ? Math.sin(Math.PI * st.air) : 0;      // 0 au sol, 1 au sommet du bond
+    const hang = st.hang || 0;                                // 0 au sol, 1 suspendu par les bras
+    const reach = Math.max(air ? Math.sin(Math.PI * st.air) : 0, hang);      // 0 au sol, 1 au sommet du bond
     if (this.wasAir && !air) this.sqV -= 3.2;                // l'atterrissage écrase le corps
     this.wasAir = air;
     this.sqV += (-this.sq * 160 - this.sqV * 14) * dt; this.sq += this.sqV * dt;
@@ -70,7 +71,7 @@ export class Beast {
     const ca = 0.9 * Math.min(1.15, cr);                       // angle de pliure des pattes en traque
     const drop = this.leg * (0.78 * (1 - Math.cos(ca)) - this.sq * 0.3);  // le corps descend exactement de ce que les pattes replient
     this.body.position.y = (st.y || 0) - drop + g.bob * this.length * run * Math.sin(p + 1.1);
-    this.body.rotation.x = g.pitch * run * Math.cos(p) + (air ? -0.32 * Math.cos(Math.PI * st.air) : 0) + cr * 0.05;
+    this.body.rotation.x = st.bodyPitch !== undefined ? st.bodyPitch : g.pitch * run * Math.cos(p) + (air ? -0.32 * Math.cos(Math.PI * st.air) : 0) + cr * 0.05;
     this.body.rotation.z = (st.lean || 0) * 0.5;
     this.body.rotation.y = (st.lean || 0) * 0.35;
 
@@ -86,15 +87,15 @@ export class Beast {
     // Pattes avant : balancier + genou qui se replie pendant la phase de vol ; tendues vers l'avant pendant le bond.
     for (const [n, off] of [['FL', 0], ['FR', g.lr]]) {
       const ps = p + TAU * off, sw = Math.sin(ps), lift = Math.max(0, Math.cos(ps));
-      this.rot(n + '1', run * g.fSwing * sw + reach * 1.05 - ca);
+      this.rot(n + '1', run * g.fSwing * sw + reach * (1.05 + 0.42 * hang) - ca + (st.arm || 0) * (off ? -1 : 1));
       this.rot(n + '2', run * g.fKnee * 0.45 * lift + reach * 0.15 + ca * 2);
       this.rot(n + '3', -run * g.fKnee * 1.2 * lift - reach * 0.25 - ca);
     }
     // Pattes arrière : en opposition ; elles poussent vers l'arrière pendant le bond.
     for (const [n, off] of [['HL', g.hindLag], ['HR', g.hindLag + g.lr]]) {
       const ps = p + TAU * off, sw = Math.sin(ps), lift = Math.max(0, Math.cos(ps));
-      this.rot(n + '1', run * g.hSwing * sw - reach * 0.95 + ca);
-      this.rot(n + '2', -run * g.hKnee * lift + reach * 0.3 - ca * 2);
+      this.rot(n + '1', run * g.hSwing * sw - reach * (0.95 - 0.5 * hang) + ca + (st.legs || 0) * (off > g.hindLag ? 1 : 0.6));
+      this.rot(n + '2', -run * g.hKnee * lift + reach * 0.3 - ca * 2 - hang * 0.55 - (st.legs || 0) * 0.8);
       this.rot(n + '3', run * g.hKnee * 0.9 * lift - reach * 0.2 + ca);
     }
 
