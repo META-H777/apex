@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#06060E">
+<title>APEX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --nuit:#06060E; --brume:#1E1B4B; --violet:#7741D1; --cyan:#1EB4DC; --teal:#0BDACB; --magenta:#E82ED6; --or:#E2AC5E; --blanc:#EAF2FF; }
+  html, body { margin:0; height:100%; background:var(--nuit); overflow:hidden; }
+  body { touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent;
+         font-family:'Rajdhani', system-ui, sans-serif; color:var(--blanc); }
+  canvas { display:block; position:fixed; inset:0; width:100%; height:100%; }
+  #ui { position:fixed; inset:0; pointer-events:none; }
+  .hide { display:none !important; }
+  .ombre { text-shadow:0 2px 6px rgba(0,0,8,.9), 0 0 2px rgba(0,0,8,.9); }
+
+  /* Menu */
+  #menu { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; padding:calc(env(safe-area-inset-top) + 4vh) 4vw 0; }
+  #menu .logo { width:min(100vw, 62vh); margin-top:2vh; }
+  #menu p { margin:.6em 0 0; text-align:center; font-weight:600; font-size:min(5vw, 2.6vh); line-height:1.25; }
+  #menu .rose { color:#FF8AE6; font-size:min(4.3vw, 2.2vh); }
+  #menu .son { color:#A9A0D8; font-size:min(3.6vw, 1.8vh); font-weight:500; }
+  .btn { position:absolute; left:50%; transform:translateX(-50%); width:min(105vw, 60vh); aspect-ratio:1024/688; display:flex; align-items:center; justify-content:center; animation:respire 1.8s ease-in-out infinite; }
+  .btn img { position:absolute; inset:0; width:100%; height:100%; }
+  .btn span { position:relative; font-weight:700; font-size:min(6vw, 3vh); letter-spacing:.02em; }
+  #menu .btn { bottom:calc(env(safe-area-inset-bottom) + 4vh); }
+  #record { position:absolute; bottom:calc(env(safe-area-inset-bottom) + 2vh); width:100%; text-align:center; font-size:min(4.3vw, 2.2vh); font-weight:600; }
+  @keyframes respire { 0%,100% { opacity:.82 } 50% { opacity:1 } }
+
+  /* Course */
+  #hud { position:absolute; inset:0; }
+  #score { position:absolute; left:4vw; top:calc(env(safe-area-inset-top) + 1.5vh); font-size:min(11vw, 5.5vh); font-weight:700; line-height:1; }
+  #serie { position:absolute; left:4.3vw; top:calc(env(safe-area-inset-top) + 7.5vh); font-size:min(4.5vw, 2.3vh); color:#C3B2FF; font-weight:600; }
+  #fantome { position:absolute; left:4.3vw; top:calc(env(safe-area-inset-top) + 10.5vh); font-size:min(3.8vw, 1.9vh); color:#8FE6FF; font-weight:500; }
+  #frenesie { position:absolute; right:1vw; top:calc(env(safe-area-inset-top) + 0.5vh); width:min(50vw, 26vh); text-align:center; animation:respire 1.2s ease-in-out infinite; }
+  #frenesie img { width:100%; display:block; }
+  #frenesie span { display:block; margin-top:-3.5vh; font-size:min(9vw, 4.5vh); font-weight:700; color:var(--or); }
+  #juge { position:absolute; left:50%; top:36%; width:min(82vw, 44vh); transform:translate(-50%,-50%); opacity:0; }
+  #juge.pop { animation:pop .6s ease-out forwards; }
+  @keyframes pop { 0% { opacity:1; transform:translate(-50%,-50%) scale(1.35) } 25% { opacity:1; transform:translate(-50%,-50%) scale(1) } 50% { opacity:1 } 100% { opacity:0; transform:translate(-50%,-50%) scale(1) } }
+
+  /* Fin */
+  #fin { position:absolute; inset:0; }
+  #fin .titre { position:absolute; left:50%; top:45%; width:min(95vw, 52vh); transform:translate(-50%,-50%); }
+  #fin p { position:absolute; width:100%; text-align:center; margin:0; font-weight:600; }
+  #finSous { top:56%; font-size:min(4.4vw, 2.2vh); }
+  #finScore { top:60%; font-size:min(4.8vw, 2.4vh); color:#C3B2FF; }
+  #finSouffle { top:65.5%; font-size:min(4.2vw, 2.1vh); color:#FFC066; }
+  #fin .btn { top:72%; }
+
+  #chargement { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:min(5vw,2.4vh); color:#A9A0D8; background:var(--nuit); font-weight:600; letter-spacing:.05em; }
+  #version { position:absolute; right:2vw; bottom:calc(env(safe-area-inset-bottom) + .6vh); font-size:11px; color:rgba(200,190,255,.45); font-family:system-ui, sans-serif; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="ui">
+  <div id="menu" class="hide">
+    <img class="logo" src="assets/logo-apex.webp" alt="APEX">
+    <p class="ombre">Maintiens pour traquer.<br>Relâche sur le temps pour bondir.</p>
+    <p class="ombre rose">Baisse-toi sous les branches roses.</p>
+    <p class="ombre son">Monte le son : la chasse se joue au rythme.</p>
+    <div class="btn"><img src="assets/cadre-bouton.webp" alt=""><span class="ombre">Touche pour chasser</span></div>
+    <div id="record" class="ombre"></div>
+  </div>
+  <div id="hud" class="hide">
+    <div id="score" class="ombre">0</div>
+    <div id="serie" class="ombre">Série 0</div>
+    <div id="fantome" class="ombre"></div>
+    <div id="frenesie" class="hide"><img src="assets/frenesie.webp" alt="FRÉNÉSIE"><span class="ombre">×2</span></div>
+  </div>
+  <img id="juge" alt="">
+  <div id="fin" class="hide">
+    <img class="titre" alt="">
+    <p id="finSous" class="ombre">Ta proie t'a repérée</p>
+    <p id="finScore" class="ombre"></p>
+    <p id="finSouffle" class="ombre">Second souffle · 0,99 € (démo)</p>
+    <div class="btn"><img src="assets/cadre-bouton.webp" alt=""><span class="ombre">Touche pour rechasser</span></div>
+  </div>
+  <div id="chargement">Chargement de la jungle…</div>
+  <div id="version"></div>
+</div>
+<script type="module" src="main.js"></script>
+</body>
+</html>
