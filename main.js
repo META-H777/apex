@@ -1,4 +1,4 @@
-// APEX — version web (three.js) du prototype Unity (Unity/APEX/Assets/Scripts/ApexGame.cs).
+// APEX v1.0 — refonte complète : monde en volume, animaux vivants, lumière douce.
 // Maintiens pour traquer (passer sous les branches), relâche sur le temps fort pour bondir sur la proie.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -6,316 +6,177 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { U, patch, buildWorld, ground, pathH } from './monde.js';
+import { Beast, PANTHER, DEER } from './betes.js';
+import { Son } from './son.js';
 
-const VERSION = 'v0.2 · 18/11 · la Fuite';
-
-// ---------- Réglages (mêmes valeurs que dans Unity) ----------
+const VERSION = 'v1.0 · refonte';
 const BPM = 120, SPB = 60 / BPM, SPEED = 9, PERFECT = 0.045, GOOD = 0.09, BARS = 64, SEED = 1789;
-const DECOR_SPAN = 140;
 const params = new URLSearchParams(location.search);
 let autopilot = params.has('auto');
-const fuiteOnly = params.has('fuite'); // ?fuite=1 : commence directement dans la peau du cerf
-
-// La partie : on chasse en panthère, puis les rôles s'inversent et on fuit en cerf.
-// TRANSFER_BAR : mesure où la bascule a lieu (2 mesures de transition sans obstacle).
-const TRANSFER_BAR = fuiteOnly ? 0 : (+params.get('bascule') || 32); // ?bascule=4 : bascule plus tôt, pour tester
-const GAP_START = 6, GAP_MAX = 8, GAP_HIT = 2; // distance panthère-cerf pendant la Fuite (en mètres de « marge »)
-
-// Couleurs de la charte (Visuels/CHARTE-VISUELLE.md)
-const C = { nuit: '#06060E', brume: '#1E1B4B', violet: '#7741D1', cyan: '#1EB4DC', teal: '#0BDACB', magenta: '#E82ED6', or: '#E2AC5E', perle: '#1A83E5' };
-const hdr = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
-
-function rng(seed) { // mulberry32 : niveau identique à chaque partie
-  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-}
+const fuiteOnly = params.has('fuite');
+const studio = params.has('studio');                     // vue de profil, pour régler les animations
+const TRANSFER_BAR = fuiteOnly ? 0 : (+params.get('bascule') || 32);
+const GAP_START = 6, GAP_MAX = 8, GAP_HIT = 2;
+const PREY_RUN = 1.7, PREY_SPEED = 4.2;                   // la proie détale 1,7 s avant d'être rattrapée
+const L = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
+const C = { cyan: new THREE.Color('#1EB4DC'), violet: new THREE.Color('#7741D1'), or: new THREE.Color('#E2AC5E'), teal: new THREE.Color('#0BDACB'), magenta: new THREE.Color('#E82ED6') };
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const $ = (id) => document.getElementById(id);
 
 // ---------- Rendu ----------
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+let pixelRatio = Math.min(devicePixelRatio, 1.5);
+renderer.setPixelRatio(pixelRatio);
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.32;
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(C.nuit);
-scene.fog = new THREE.FogExp2('#120F2B', 0.024);
-scene.add(new THREE.AmbientLight('#3A3570', 0.9));
-const moon = new THREE.DirectionalLight('#8066FF', 0.35); moon.position.set(-3, 8, -4); scene.add(moon);
-
-const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 140);
-scene.add(camera);
+scene.fog = new THREE.FogExp2('#0a0920', 0.0185);
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 150);
+scene.add(new THREE.HemisphereLight('#39348c', '#06050d', 1.15));
+const moon = new THREE.DirectionalLight('#7a6cff', 0.75); scene.add(moon); scene.add(moon.target);
+const selfLight = new THREE.PointLight('#3fc4ff', 16, 12, 2); scene.add(selfLight);   // la lueur du joueur éclaire le sol
+const preyLight = new THREE.PointLight('#ffbf6a', 0, 11, 2); scene.add(preyLight);    // celle de la proie la plus proche
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.8, 0.55, 0.82);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.5, 0.72, 0.78);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform float uTime; varying vec2 vUv;
+    void main(){
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      vec2 q = vUv - 0.5;
+      c *= 1.0 - dot(q, q) * 0.95;                                   // vignette
+      c = mix(c, c * vec3(0.94, 0.97, 1.08), 0.5);                   // légère dominante froide
+      c += (fract(sin(dot(vUv * (uTime + 1.0), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.018; // grain
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+});
+composer.addPass(grade);
 
 // ---------- Chargement ----------
 const texLoader = new THREE.TextureLoader();
-const tex = (name) => new Promise((ok) => texLoader.load('assets/' + name, (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; ok(t); }, undefined, () => ok(null)));
-const gltfLoader = new GLTFLoader();
-const glb = (name) => new Promise((ok) => gltfLoader.load('assets/' + name, ok, undefined, () => ok(null)));
+const tex = (n) => new Promise((ok, ko) => texLoader.load('assets/' + n, (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; ok(t); }, undefined, ko));
+const glb = (n) => new Promise((ok, ko) => new GLTFLoader().load('assets/' + n, ok, undefined, ko));
+const [tSol, tEcorce, tFronde, tFeuille, gPanther, gDeer] = await Promise.all([tex('sol.webp'), tex('ecorce.webp'), tex('fronde.webp'), tex('feuille.webp'), glb('panthere-rig.glb'), glb('cerf-rig.glb')]);
+const world = buildWorld(scene, { sol: tSol, ecorce: tEcorce, fronde: tFronde, feuille: tFeuille });
+if (studio) { world.fronds.visible = world.bushes.visible = world.mush.visible = false; }
 
-const [tFern, tMush, tVine, tTrunk, tBranch, tBack, tGround, gPanther, gPrey] = await Promise.all([
-  tex('fougere.webp'), tex('champignons.webp'), tex('lianes.webp'), tex('tronc.webp'), tex('branche-basse.webp'),
-  tex('fond-canopee.webp'), tex('sol.webp'), glb('panthere.glb'), glb('cerf.glb')]);
+// ---------- Les bêtes ----------
+const stripeMats = [];
+const pantherMat = (m) => { const mat = patch(new THREE.MeshStandardMaterial({ map: m.map, emissiveMap: m.map, emissive: new THREE.Color(1, 1, 1), emissiveIntensity: 1, roughness: 0.82, metalness: 0 }), { rim: '#0b2c52', stripes: 3.4 }); stripeMats.push(mat); return mat; };
+const glassMat = (k) => (m) => patch(new THREE.MeshStandardMaterial({ map: m.map, color: '#2a1c0a', emissiveMap: m.map, emissive: new THREE.Color(1.0, 0.76, 0.4), emissiveIntensity: k, roughness: 0.35, metalness: 0 }), { glass: 1.7 });
+const ghostMat = () => patch(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.1, 0.55, 0.75), transparent: true, opacity: 0.3, depthWrite: false }));
 
-// ---------- Matériaux ----------
-const glowMats = []; // matériaux qui respirent avec la musique
-function glow(mat) { glowMats.push({ mat, base: mat.color.clone() }); return mat; }
-const sprite = (map, color, cutout) => new THREE.MeshBasicMaterial({ map, color, side: THREE.DoubleSide,
-  transparent: !cutout, alphaTest: cutout ? 0.45 : 0.01, depthWrite: !!cutout });
+const panther = new Beast(gPanther, { length: 2.5, material: pantherMat, gait: PANTHER }); scene.add(panther.root);
+const ghost = new Beast(gPanther, { length: 2.5, material: ghostMat, gait: PANTHER }); ghost.root.visible = false; scene.add(ghost.root);
+const deer = new Beast(gDeer, { length: 1.65, material: glassMat(1.15), gait: DEER }); deer.root.visible = false; scene.add(deer.root);
+const preyPool = Array.from({ length: 7 }, () => { const b = new Beast(gDeer, { length: 1.55, material: glassMat(1.0), gait: DEER }); b.root.visible = false; scene.add(b.root); return b; });
 
-const fernMat = glow(sprite(tFern, hdr('#FFFFFF', 1.15), true));
-const mushMat = glow(sprite(tMush, hdr('#FFFFFF', 1.7), false));
-const vineMat = glow(sprite(tVine, hdr('#E8F0FF', 1.6), false));
-const trunkMat = sprite(tTrunk, hdr('#C8C0FF', 0.62), true);
-const branchMat = glow(sprite(tBranch, hdr('#FFFFFF', 1.6), false));
-const barMat = glow(new THREE.MeshBasicMaterial({ color: hdr(C.violet, 1.4) }));
-
-// ---------- Monde ----------
-const quad = new THREE.PlaneGeometry(1, 1);
-
-// Toile de fond accrochée à la caméra, sans brouillard (sinon elle disparaîtrait au loin).
-const backdrop = new THREE.Mesh(quad, new THREE.MeshBasicMaterial({ map: tBack, fog: false, color: hdr('#FFFFFF', 0.85) }));
-backdrop.renderOrder = -1;
-camera.add(backdrop);
-function fitBackdrop() {
-  if (!tBack) return;
-  const d = camera.far * 0.92;
-  let h = 2 * d * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.04;
-  const ia = tBack.image.width / tBack.image.height;
-  const w = Math.max(h * ia, h * camera.aspect * 1.04);
-  h = w / ia;
-  backdrop.position.set(0, h * 0.06, -d);
-  backdrop.scale.set(w, h, 1);
+// ---------- Spores : la proie se désagrège, la lumière revient au chasseur ----------
+const NP = 1600;
+const sp = { pos: new Float32Array(NP * 3), vel: new Float32Array(NP * 3), col: new Float32Array(NP * 3), life: new Float32Array(NP), max: new Float32Array(NP), size: new Float32Array(NP), home: new Uint8Array(NP), k: new Float32Array(NP), i: 0 };
+const spGeo = new THREE.BufferGeometry();
+spGeo.setAttribute('position', new THREE.BufferAttribute(sp.pos, 3)); spGeo.setAttribute('aCol', new THREE.BufferAttribute(sp.col, 3));
+spGeo.setAttribute('aK', new THREE.BufferAttribute(sp.k, 1)); spGeo.setAttribute('aSize', new THREE.BufferAttribute(sp.size, 1));
+const spores = new THREE.Points(spGeo, new THREE.ShaderMaterial({
+  uniforms: { ...U, uScale: { value: innerHeight } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */`
+    uniform vec2 uBend; uniform float uScale; attribute vec3 aCol; attribute float aK; attribute float aSize; varying vec3 vC;
+    void main(){
+      vC = aCol * aK;
+      vec4 mv = viewMatrix * vec4(position, 1.0);
+      mv.xy += uBend * mv.z * mv.z;
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = aK > 0.0 ? uScale * aSize / max(0.5, -mv.z) : 0.0;
+    }`,
+  fragmentShader: `varying vec3 vC; void main(){ float d = length(gl_PointCoord - 0.5) * 2.0; gl_FragColor = vec4(vC * pow(max(0.0, 1.0 - d), 2.0), 1.0); }`,
+}));
+spores.frustumCulled = false; scene.add(spores);
+function emit(x, y, z, vx, vy, vz, color, life, size, home) {
+  const i = sp.i++ % NP;
+  sp.pos[i * 3] = x; sp.pos[i * 3 + 1] = y; sp.pos[i * 3 + 2] = z; sp.vel[i * 3] = vx; sp.vel[i * 3 + 1] = vy; sp.vel[i * 3 + 2] = vz;
+  sp.col[i * 3] = color.r; sp.col[i * 3 + 1] = color.g; sp.col[i * 3 + 2] = color.b; sp.life[i] = sp.max[i] = life; sp.size[i] = size; sp.home[i] = home ? 1 : 0;
 }
-
-// Sol : terre mouillée Higgsfield, tuiles de 8 m en miroir.
-if (tGround) { tGround.wrapS = tGround.wrapT = THREE.MirroredRepeatWrapping; tGround.repeat.set(5, 500); }
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 4000), new THREE.MeshBasicMaterial({ map: tGround, color: hdr('#C8C8FF', 0.8) }));
-ground.rotation.x = -Math.PI / 2; ground.position.set(0, 0, 1900);
-scene.add(ground);
-
-// Jungle en sprites, recyclée devant la panthère.
-const decor = [];
-function billboard(map, mat, height, x, y, z, yaw, hanging = false, widthFactor = 1) {
-  const m = new THREE.Mesh(quad, mat);
-  const w = height * map.image.width / map.image.height * widthFactor;
-  m.scale.set(w, height, 1);
-  m.position.set(x, y + (hanging ? -height / 2 : height / 2), z);
-  m.rotation.y = yaw;
-  scene.add(m); decor.push(m);
+const sporeGold = new THREE.Color(1.0, 0.62, 0.2), sporeTeal = new THREE.Color(0.1, 0.9, 0.8);
+let charge = 0; // lumière absorbée par la panthère : ses rayures s'avivent
+function updateSpores(dt, time, target) {
+  for (let i = 0; i < NP; i++) {
+    if (sp.life[i] <= 0) { sp.k[i] = 0; continue; }
+    sp.life[i] -= dt;
+    const a = i * 3, age = sp.max[i] - sp.life[i];
+    // turbulence douce + traînée
+    sp.vel[a] += Math.sin(time * 3.1 + i * 1.7) * 2.2 * dt; sp.vel[a + 1] += (0.9 + Math.sin(time * 2.3 + i)) * 1.2 * dt; sp.vel[a + 2] += Math.cos(time * 2.7 + i * 0.9) * 2.2 * dt;
+    const drag = Math.exp(-2.2 * dt); sp.vel[a] *= drag; sp.vel[a + 1] *= drag; sp.vel[a + 2] = L(SPEED * 0.55, sp.vel[a + 2], drag);
+    if (sp.home[i] && target && age > 0.3) { // aspirées par le chasseur
+      const dx = target.x - sp.pos[a], dy = target.y - sp.pos[a + 1], dz = target.z - sp.pos[a + 2], d = Math.hypot(dx, dy, dz) + 1e-3, pull = Math.min(60, 14 + age * 40);
+      sp.vel[a] += dx / d * pull * dt; sp.vel[a + 1] += dy / d * pull * dt; sp.vel[a + 2] += dz / d * pull * dt + (SPEED - sp.vel[a + 2]) * 3 * dt;
+      if (d < 0.55) { sp.life[i] = 0; charge = Math.min(1.5, charge + 0.004); }
+    }
+    sp.pos[a] += sp.vel[a] * dt; sp.pos[a + 1] += sp.vel[a + 1] * dt; sp.pos[a + 2] += sp.vel[a + 2] * dt;
+    const t = sp.life[i] / sp.max[i]; sp.k[i] = Math.min(1, t * 3) * Math.min(1, age * 12);
+  }
+  spGeo.attributes.position.needsUpdate = true; spGeo.attributes.aK.needsUpdate = true; spGeo.attributes.aCol.needsUpdate = true; spGeo.attributes.aSize.needsUpdate = true;
 }
-{
-  const r = rng(SEED);
-  const R = (a, b) => a + (b - a) * r();
-  const side = () => (r() < 0.5 ? -1 : 1);
-  const deg = THREE.MathUtils.degToRad;
-  if (tTrunk) for (let i = 0; i < 22; i++) billboard(tTrunk, trunkMat, R(38, 50), side() * R(7.5, 16), -0.5, R(0, DECOR_SPAN), deg(R(-20, 20)), false, 0.5);
-  if (tFern) for (let i = 0; i < 110; i++) billboard(tFern, fernMat, R(1.4, 3.6), side() * R(2.3, 10), -0.05, R(0, DECOR_SPAN), deg(R(-35, 35)));
-  if (tMush) for (let i = 0; i < 55; i++) billboard(tMush, mushMat, R(0.6, 1.5), side() * R(2.0, 7.5), -0.02, R(0, DECOR_SPAN), deg(R(-30, 30)));
-  if (tVine) for (let i = 0; i < 34; i++) billboard(tVine, vineMat, R(3.5, 6.5), side() * R(1.8, 9), R(7.5, 10), R(0, DECOR_SPAN), deg(R(-25, 25)), true);
-}
-
-// Lignes de temps au sol.
-const bars = [];
-{ const g = new THREE.BoxGeometry(3.2, 0.02, 0.08); for (let i = 0; i < 48; i++) { const b = new THREE.Mesh(g, barMat); scene.add(b); bars.push(b); } }
-
-// Anneaux de lumière qui partent sous la panthère à chaque temps (charte).
-const rings = [];
-{
-  const g = new THREE.RingGeometry(0.92, 1, 64); g.rotateX(-Math.PI / 2);
-  for (let i = 0; i < 6; i++) {
-    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: hdr(C.cyan, 1.6), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
-    scene.add(m); rings.push({ m, born: -9 });
+// La bête se dissout : chaque spore naît là où se trouvait sa peau.
+function dissolve(beast, n, color, home, vz) {
+  const pts = beast.sample(n, []);
+  for (let i = 0; i < n; i++) {
+    const a = i * 3, r1 = Math.random() - 0.5, r2 = Math.random(), r3 = Math.random() - 0.5;
+    emit(pts[a], pts[a + 1], pts[a + 2], r1 * 2.4, 0.4 + r2 * 2.2, vz + r3 * 2.4, color, 0.9 + Math.random() * 1.1, 0.05 + Math.random() * 0.07, home);
   }
 }
-let ringIdx = 0;
-function spawnRing(z, accent, t) {
-  const r = rings[ringIdx++ % rings.length];
-  r.born = t; r.m.position.set(0, 0.03, z);
-  r.m.material.color.copy(accent ? hdr(C.violet, 2.2) : hdr(C.cyan, 1.3));
-}
+function puff(x, y, z, n, color, spread, size) { for (let i = 0; i < n; i++) emit(x + (Math.random() - 0.5) * spread, y + Math.random() * 0.2, z + (Math.random() - 0.5) * spread, (Math.random() - 0.5) * 2.5, Math.random() * 1.4, SPEED * 0.6 + (Math.random() - 0.5) * 2.5, color, 0.5 + Math.random() * 0.7, size, false); }
 
-// ---------- Modèles ----------
-// Met le modèle tête vers +Z (repère « Tete » posé dans Blender), à la bonne longueur, pattes au sol.
-function fitModel(gltf, length, material) {
-  if (!gltf) return null;
-  const inner = gltf.scene.clone(true);
-  const rot = new THREE.Group(); rot.add(inner);
-  const holder = new THREE.Group(); holder.add(rot);
-  holder.updateMatrixWorld(true);
-  let box = new THREE.Box3().setFromObject(inner);
-  const c = box.getCenter(new THREE.Vector3());
-  let head = null; inner.traverse((o) => { if (o.name.startsWith('Tete')) head = o; });
-  const dir = head ? head.getWorldPosition(new THREE.Vector3()).sub(c) : new THREE.Vector3(0, 0, 1);
-  rot.rotation.y = -Math.atan2(dir.x, dir.z);
-  inner.traverse((o) => { if (o.isMesh) { o.material = material(o.material); o.frustumCulled = true; } });
-  holder.updateMatrixWorld(true);
-  box = new THREE.Box3().setFromObject(rot);
-  const s = length / Math.max(0.01, box.max.z - box.min.z);
-  rot.scale.setScalar(s);
-  holder.updateMatrixWorld(true);
-  box = new THREE.Box3().setFromObject(rot);
-  const cc = box.getCenter(new THREE.Vector3());
-  rot.position.set(-cc.x, -box.min.y, -cc.z);
-  return holder;
-}
-
-const pantherSrc = fitModel(gPanther, 2.4, (m) => new THREE.MeshStandardMaterial({ map: m.map, emissiveMap: m.map, emissive: new THREE.Color('#FFFFFF'), emissiveIntensity: 2.2, roughness: 0.55, metalness: 0 }));
-const ghostMat = new THREE.MeshBasicMaterial({ color: hdr(C.cyan, 1.2), transparent: true, opacity: 0.45, depthWrite: false });
-const preyMat = (m) => new THREE.MeshBasicMaterial({ map: m.map, color: new THREE.Color(2.3, 1.9, 1.4) });
-const preySrc = fitModel(gPrey, 1.5, preyMat);
-
-// Le cerf que l'on incarne pendant la Fuite (or plus vif que les proies : c'est « toi »).
-const deer = new THREE.Group(); deer.visible = false; scene.add(deer);
-const deerModel = fitModel(gPrey, 1.5, (m) => new THREE.MeshBasicMaterial({ map: m.map, color: new THREE.Color(1.7, 1.4, 1.0) }))
-  || new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 12).translate(0, 0.8, 0), new THREE.MeshBasicMaterial({ color: hdr(C.or, 3) }));
-deer.add(deerModel);
-
-// Griffes au sol : là où la panthère va bondir (texture dessinée à la volée, trois entailles cyan).
-function clawTexture() {
-  const c = document.createElement('canvas'); c.width = c.height = 256;
-  const g = c.getContext('2d');
-  g.lineCap = 'round';
-  for (const [blur, width, alpha] of [[18, 22, 0.5], [6, 12, 0.9], [0, 5, 1]]) {
-    g.shadowColor = '#1EB4DC'; g.shadowBlur = blur; g.strokeStyle = `rgba(200,250,255,${alpha})`; g.lineWidth = width;
-    for (let i = -1; i <= 1; i++) {
-      g.beginPath(); g.moveTo(70 + i * 55, 40); g.quadraticCurveTo(128 + i * 45, 128, 100 + i * 55, 220); g.stroke();
-    }
+// ---------- Obstacles et repères ----------
+// Branche basse : un vrai tronc couché en travers du sentier, d'où pendent des gouttes de lumière rose.
+const branchGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([[-7, 3.1, 0.4], [-3.4, 1.85, 0.15], [0, 1.52, 0], [3.4, 1.8, -0.15], [7, 3.0, -0.4]].map((p) => new THREE.Vector3(...p))), 28, 0.19, 7);
+const branchMat = patch(world.barkMat(), { rim: '#3a0a36' });
+const dropsGeo = (() => {
+  const r = rng(7), parts = [];
+  for (let i = 0; i < 13; i++) {
+    const x = -3.2 + i * 0.53 + (r() - 0.5) * 0.2, top = 1.5 + 0.03 * x * x - 0.17, len = 0.22 + r() * 0.5;
+    parts.push(new THREE.CylinderGeometry(0.008, 0.008, len, 4).translate(x, top - len / 2, 0).toNonIndexed());
+    parts.push(new THREE.SphereGeometry(0.035 + r() * 0.025, 8, 6).translate(x, top - len, 0).toNonIndexed());
+  }
+  return mergeGeometries(parts);
+})();
+const dropsMat = patch(new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.28, 1.35) }));
+// Griffes au sol (Fuite) : l'endroit et l'instant où le prédateur va bondir.
+const clawTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'); g.lineCap = 'round';
+  for (const [blur, width, alpha] of [[16, 16, 0.35], [5, 7, 0.8], [0, 2.5, 1]]) {
+    g.shadowColor = '#1EB4DC'; g.shadowBlur = blur; g.strokeStyle = `rgba(190,245,255,${alpha})`; g.lineWidth = width;
+    for (let i = -1; i <= 1; i++) { g.beginPath(); g.moveTo(74 + i * 50, 46); g.quadraticCurveTo(128 + i * 42, 128, 104 + i * 50, 214); g.stroke(); }
   }
   return new THREE.CanvasTexture(c);
-}
-const clawMat = glow(new THREE.MeshBasicMaterial({ map: clawTexture(), color: hdr(C.cyan, 1.6), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
-const clawGeo = new THREE.PlaneGeometry(2.4, 2.4).rotateX(-Math.PI / 2);
-
-const panther = new THREE.Group(); scene.add(panther);
-const pantherModel = pantherSrc ? pantherSrc : new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 1.4, 4, 12).rotateX(Math.PI / 2).translate(0, 0.4, 0), new THREE.MeshStandardMaterial({ color: '#0A0A14', emissive: hdr(C.cyan, 0.8) }));
-panther.add(pantherModel);
-const ghost = new THREE.Group(); scene.add(ghost); ghost.visible = false;
-if (pantherSrc) { const g = pantherSrc.clone(true); g.traverse((o) => { if (o.isMesh) o.material = ghostMat; }); ghost.add(g); }
-
-// ---------- Particules ----------
-function dotTexture() {
-  const c = document.createElement('canvas'); c.width = c.height = 64;
-  const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
-  const t = new THREE.CanvasTexture(c); return t;
-}
-const dot = dotTexture();
-function makePoints(n, color, size) {
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
-  const mat = new THREE.PointsMaterial({ map: dot, size, color, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
-  const p = new THREE.Points(geo, mat); p.frustumCulled = false; scene.add(p); return p;
-}
-// Gerbe de spores dorées à la mise à mort.
-const BURST = 420;
-const burst = makePoints(BURST, hdr('#FF9A2E', 2.4), 0.22);
-const bv = new Float32Array(BURST * 3), bl = new Float32Array(BURST), bmax = new Float32Array(BURST);
-let burstIdx = 0;
-function emitBurst(pos, n) {
-  const p = burst.geometry.attributes.position.array;
-  for (let k = 0; k < n; k++) {
-    const i = burstIdx++ % BURST;
-    const d = new THREE.Vector3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize();
-    const s = 3 + Math.random() * 7;
-    p[i * 3] = pos.x + d.x * 0.3; p[i * 3 + 1] = pos.y + d.y * 0.3; p[i * 3 + 2] = pos.z + d.z * 0.3;
-    bv[i * 3] = d.x * s; bv[i * 3 + 1] = d.y * s + 2; bv[i * 3 + 2] = d.z * s;
-    bmax[i] = bl[i] = 0.4 + Math.random() * 0.6;
-  }
-}
-function updateBurst(dt) {
-  const p = burst.geometry.attributes.position.array, col = burst.geometry.attributes.color.array;
-  for (let i = 0; i < BURST; i++) {
-    if (bl[i] <= 0) { col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 0; continue; }
-    bl[i] -= dt; bv[i * 3 + 1] -= 4.9 * dt;
-    p[i * 3] += bv[i * 3] * dt; p[i * 3 + 1] += bv[i * 3 + 1] * dt; p[i * 3 + 2] += bv[i * 3 + 2] * dt;
-    const k = Math.max(0, bl[i] / bmax[i]); col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
-  }
-  burst.geometry.attributes.position.needsUpdate = true; burst.geometry.attributes.color.needsUpdate = true;
-}
-// Spores teal ambiantes qui flottent devant la panthère.
-const AMB = 320;
-const amb = makePoints(AMB, hdr(C.teal, 1.8), 0.1);
-const ap = [], aph = [];
-for (let i = 0; i < AMB; i++) { ap.push(new THREE.Vector3((Math.random() - 0.5) * 16, Math.random() * 6, Math.random() * 30)); aph.push(Math.random() * 6.28); }
-function updateAmbient(z, time) {
-  const p = amb.geometry.attributes.position.array, col = amb.geometry.attributes.color.array;
-  for (let i = 0; i < AMB; i++) {
-    const a = ap[i];
-    if (a.z < z - 4) a.z += 30;
-    a.y += Math.sin(time * 0.7 + aph[i]) * 0.003;
-    p[i * 3] = a.x + Math.sin(time * 0.5 + aph[i]) * 0.3; p[i * 3 + 1] = a.y; p[i * 3 + 2] = a.z;
-    const k = 0.4 + 0.6 * Math.max(0, Math.sin(time * 1.3 + aph[i] * 3));
-    col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
-  }
-  amb.geometry.attributes.position.needsUpdate = true; amb.geometry.attributes.color.needsUpdate = true;
-}
-
-// ---------- Son (WebAudio) : tambours tribaux + électro, synthétisés ----------
-let ctx = null, master = null, noiseBuf = null;
-function audioInit() {
-  if (ctx) { if (ctx.state !== 'running') ctx.resume(); return; }
-  ctx = new (window.AudioContext || window.webkitAudioContext)();
-  master = ctx.createGain(); master.gain.value = 0.8; master.connect(ctx.destination);
-  noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-  const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  // Débloque le son sur iPhone : un son muet joué pendant le geste.
-  const b = ctx.createBufferSource(); b.buffer = ctx.createBuffer(1, 1, 22050); b.connect(master); b.start();
-}
-function env(t, a, d, peak) { const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + d); g.connect(master); return g; }
-function kick(t, v = 1) { const o = ctx.createOscillator(); o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.16); o.connect(env(t, 0.003, 0.32, 0.9 * v)); o.start(t); o.stop(t + 0.4); }
-function noise(t, dur, freq, q, v, type = 'bandpass') { const s = ctx.createBufferSource(); s.buffer = noiseBuf; const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q; s.connect(f); f.connect(env(t, 0.002, dur, v)); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05); }
-function tom(t, f0, v) { const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + 0.25); o.connect(env(t, 0.004, 0.3, v)); o.start(t); o.stop(t + 0.4); }
-function bass(t, f, dur) { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(380, t); lp.frequency.exponentialRampToValueAtTime(120, t + dur); o.connect(lp); lp.connect(env(t, 0.02, dur, 0.22)); o.start(t); o.stop(t + dur + 0.1); }
-function thump(v) { const t = ctx.currentTime; const o = ctx.createOscillator(); o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.17); o.connect(env(t, 0.002, 0.35, 0.9 * v)); o.start(t); o.stop(t + 0.4); noise(t, 0.08, 2500, 0.8, 0.35 * v); }
-const BASS = [41.2, 41.2, 49.0, 36.7]; // mi, mi, sol, ré
-const BASS_FUITE = [36.7, 36.7, 43.65, 32.7]; // plus grave, plus inquiet pendant la Fuite
-let nextStep = 0; // en croches
-function scheduleMusic() {
-  if (!audioClock) return;
-  while (true) {
-    const at = startAudio + nextStep * SPB / 2;
-    if (at > ctx.currentTime + 0.2) break;
-    if (at > ctx.currentTime - 0.01) {
-      const beat = nextStep / 2, inBar = beat % 4, bar = Math.floor(beat / 4), onBeat = nextStep % 2 === 0;
-      if (onBeat) {
-        kick(at, inBar === 0 ? 1 : 0.8);
-        if (inBar === 1 || inBar === 3) noise(at, 0.12, 1800, 0.9, 0.35); // claque
-        const fuite = transferT >= 0 ? at - startAudio >= transferT - 0.01 : true;
-        if (inBar === 0) bass(at, (fuite ? BASS_FUITE : BASS)[bar % 4], SPB * 3.6);
-        if (fuite) tom(at, inBar % 2 ? 150 : 115, 0.32); // tambours de poursuite sur chaque temps
-        else if (bar >= 8 && inBar === 2) tom(at, 180, 0.35);
-      } else {
-        noise(at, 0.03, 8000, 0.7, bar >= 4 ? 0.16 : 0.08, 'highpass'); // charleston
-        const fuite = transferT >= 0 ? at - startAudio >= transferT : true;
-        if (fuite) tom(at, 230, 0.16);
-        else if (bar >= 16 && inBar === 3) tom(at, 240, 0.25);
-      }
-    }
-    nextStep++;
-  }
-}
+})();
+const clawGeo = new THREE.PlaneGeometry(2.1, 2.1).rotateX(-Math.PI / 2);
+const clawMat = patch(new THREE.MeshBasicMaterial({ map: clawTex, color: new THREE.Color(0.5, 0.9, 1.1), transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }));
 
 // ---------- État du jeu ----------
+const son = new Son();
 const State = { Menu: 0, Playing: 1, Dead: 2, Won: 3 };
-let state = State.Menu;
-let audioClock = false, startAudio = 0, startPerf = 0;
+let state = State.Menu, startPerf = 0, audioClock = false;
 const now = () => performance.now() / 1000;
-const songTime = () => (audioClock ? ctx.currentTime - startAudio : now() - startPerf);
-const latency = () => (audioClock ? (ctx.outputLatency || ctx.baseLatency || 0) : 0);
-
+const songTime = () => (audioClock ? son.time() : now() - startPerf);
+const latency = () => (audioClock ? son.latency : 0);
 let preys = [], branches = [], cues = [], levelRoot = null, levelEnd = 0;
-let mode = 'traque', transferT = Infinity, gap = GAP_START, gapShown = GAP_START, chaserPounce = -1, dodgeSide = 1, camBlendT = -9, urgent = false;
 let score = 0, combo = 0, mult = 1, best = 0, held = false, waitRelease = false;
-let pounceT = -1, shake = 0, flash = 0, deathTime = -9, lastBeatRing = -1;
+let pounceT = -1, shake = 0, deathTime = -9, lastBeat = -1, autoLast = -1;
+let mode = 'traque', transferT = Infinity, gap = GAP_START, gapShown = GAP_START, chaserPounce = -1, dodgeSide = 1, camBlendT = -9;
 let bestRun = null, currentRun = null, ghostIdx = 0, ghostHeld = false, ghostPounce = -1;
+let vital = 0, fovPunch = 0, camY = 1.5, leanS = 0;
 try { best = +localStorage.getItem('apex_best') || 0; bestRun = JSON.parse(localStorage.getItem('apex_ghost') || 'null'); } catch { best = 0; bestRun = null; }
 
 function buildLevel() {
@@ -326,8 +187,7 @@ function buildLevel() {
   transferT = TRANSFER_BAR > 0 ? TRANSFER_BAR * 4 * SPB : -1;
   for (let bar = 2; bar < BARS; bar++) {
     const fuite = bar >= TRANSFER_BAR;
-    if (fuite && TRANSFER_BAR > 0 && bar < TRANSFER_BAR + 2) continue; // 2 mesures pour comprendre ce qui arrive
-    // La difficulté repart de zéro au début de la Fuite, puis remonte plus vite.
+    if (fuite && TRANSFER_BAR > 0 && bar < TRANSFER_BAR + 2) continue;
     const d = fuite ? Math.floor((bar - TRANSFER_BAR) / (TRANSFER_BAR > 0 ? 5 : 8)) : Math.floor(bar / 8);
     const beats = [0];
     if (d >= 1) beats.push(2);
@@ -336,368 +196,346 @@ function buildLevel() {
     if (d >= 4 && r() < 0.35) beats.push(1.5);
     if (d >= 5 && r() < 0.35) beats.push(2.5);
     beats.sort((a, b) => a - b);
-    for (const b of beats) (fuite ? addCue : addPrey)((bar * 4 + b) * SPB, r);
-    if (r() < 0.25 + 0.08 * d && !beats.includes(3) && bar < BARS - 1) addBranch((bar * 4 + 3.5) * SPB);
+    for (const b of beats) {
+      const t = (bar * 4 + b) * SPB;
+      if (fuite) {
+        const z = t * SPEED + 1.1, m = new THREE.Mesh(clawGeo, clawMat); m.position.set(0, ground(0, z) + 0.07, z); levelRoot.add(m);
+        cues.push({ t, tr: m, done: false });
+      } else preys.push({ t, done: false, killed: false, doneAt: 0, side: r() < 0.5 ? -1 : 1, beast: null, x: 0, seed: r() });
+    }
+    if (r() < 0.25 + 0.08 * d && !beats.includes(3) && bar < BARS - 1) {
+      const t = (bar * 4 + 3.5) * SPB, z = t * SPEED, g = new THREE.Group();
+      g.position.set(0, ground(0, z), z); g.rotation.y = (r() - 0.5) * 0.3;
+      g.add(new THREE.Mesh(branchGeo, branchMat), new THREE.Mesh(dropsGeo, dropsMat)); levelRoot.add(g);
+      branches.push({ t, tr: g, passed: false });
+    }
   }
-  preys.sort((a, b) => a.t - b.t);
-  cues.sort((a, b) => a.t - b.t);
+  preys.sort((a, b) => a.t - b.t); cues.sort((a, b) => a.t - b.t);
   levelEnd = (BARS * 4 + 2) * SPB;
-}
-// Un bond de la panthère pendant la Fuite : des griffes au sol, pile sur le temps.
-function addCue(t) {
-  const m = new THREE.Mesh(clawGeo, clawMat); m.position.set(0, 0.04, t * SPEED + 1.1);
-  levelRoot.add(m);
-  cues.push({ t, tr: m, done: false });
-}
-function addPrey(t, r) {
-  const root = new THREE.Group(); root.position.set(0, 0, t * SPEED + 1.1);
-  root.add(preySrc ? preySrc.clone(true) : new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 12), new THREE.MeshBasicMaterial({ color: hdr(C.or, 3) })));
-  levelRoot.add(root);
-  preys.push({ t, tr: root, done: false, killed: false, doneAt: 0, side: r() < 0.5 ? -1 : 1 });
-}
-function addBranch(t) {
-  const root = new THREE.Group(); root.position.set(0, 0, t * SPEED);
-  if (tBranch) {
-    const w = 5.6, h = w * tBranch.image.height / tBranch.image.width;
-    const m = new THREE.Mesh(quad, branchMat); m.scale.set(w, h, 1); m.position.y = 1.45 + (0.5 - 0.48) * h; root.add(m);
-  } else {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(5, 0.14, 0.14), new THREE.MeshBasicMaterial({ color: hdr(C.magenta, 2.5) })); m.position.y = 1.25; root.add(m);
-  }
-  levelRoot.add(root); branches.push({ t, tr: root, passed: false });
+  for (const b of preyPool) { b.root.visible = false; b.user = null; }
 }
 
 function startRun() {
-  audioInit();
+  son.init();
   buildLevel();
-  score = 0; combo = 0; mult = 1; pounceT = -1; flash = 0; lastBeatRing = -1;
-  audioClock = ctx && ctx.state === 'running';
-  startAudio = audioClock ? ctx.currentTime + 1.0 : 0; // 1 s d'élan
+  score = 0; combo = 0; mult = 1; pounceT = -1; lastBeat = -1; autoLast = -1; charge = 0;
+  audioClock = son.ok;
+  if (audioClock) son.startRun(transferT);
   startPerf = now() + 1.0;
-  nextStep = 0; autoLast = -1;
   currentRun = { score: 0, death: 0, ev: [] };
   ghostIdx = 0; ghostHeld = false; ghostPounce = -1;
-  ghost.visible = !fuiteOnly && !!(bestRun && bestRun.ev && bestRun.ev.length);
-  pantherModel.rotation.set(0, 0, 0);
-  deerModel.rotation.set(0, 0, 0);
-  mode = 'traque'; gap = gapShown = GAP_START; chaserPounce = -1; camBlendT = -9; urgent = false;
-  deer.visible = false;
+  ghost.root.visible = !fuiteOnly && !!(bestRun && bestRun.ev && bestRun.ev.length);
+  mode = 'traque'; gap = gapShown = GAP_START; chaserPounce = -1; camBlendT = -9;
+  deer.root.visible = false; panther.body.rotation.set(0, 0, 0); deer.body.rotation.set(0, 0, 0);
   if (fuiteOnly) beginFuite(0, true);
   state = State.Playing;
   showScreen();
 }
 
-// La bascule : la panthère devient le prédateur qui te poursuit, tu deviens le cerf.
 function beginFuite(t, silent = false) {
-  mode = 'fuite'; urgent = true; camBlendT = silent ? -9 : t;
-  gap = gapShown = GAP_START; chaserPounce = -1;
-  deer.visible = true; deer.position.set(0, 0, t * SPEED); deer.scale.set(1, 1, 1);
-  ghost.visible = false; $('fantome').textContent = '';
-  pounceT = -1;
-  if (!silent) { flash = 1.2; shake = 0.5; emitBurst(new THREE.Vector3(0, 1, t * SPEED + 1), 160); if (navigator.vibrate) navigator.vibrate([30, 30, 30]); }
-  banner();
-  updateHud();
+  mode = 'fuite'; camBlendT = silent ? -9 : t;
+  gap = gapShown = GAP_START; chaserPounce = -1; pounceT = -1;
+  const z = t * SPEED;
+  deer.root.visible = true; deer.root.position.set(0, ground(0, z), z);
+  ghost.root.visible = false; $('fantome').textContent = '';
+  if (!silent) {
+    U.uWave.value.set(0, z, U.uTime.value, 1.2); shake = 0.3;
+    puff(0, ground(0, z) + 0.8, z + 1, 160, sporeGold, 1.6, 0.07);
+    if (navigator.vibrate) navigator.vibrate([30, 30, 30]);
+  }
+  if (audioClock) son.fuite();
+  banner(); updateHud();
 }
 
+// ----- Jugement -----
+function nearest(list, tj) {
+  let target = null, bestD = 999;
+  for (const p of list) { if (p.done) continue; const d = Math.abs(tj - p.t); if (d < bestD) { bestD = d; target = p; } if (p.t > tj + 1) break; }
+  return [target, bestD];
+}
 function onRelease(t) {
   pounceT = t;
-  if (mode === 'fuite') { fuiteRelease(t); return; }
-  const tj = t - latency(); // le joueur entend le temps avec le retard du haut-parleur
-  let target = null, bestD = 999;
-  for (const p of preys) {
-    if (p.done) continue;
-    const d = Math.abs(tj - p.t);
-    if (d < bestD) { bestD = d; target = p; }
-    if (p.t > tj + 1) break;
+  const tj = t - latency();
+  if (mode === 'fuite') {
+    const [c, d] = nearest(cues, tj);
+    if (!c || d > 0.28) return;
+    if (d <= PERFECT) dodge(c, true); else if (d <= GOOD) dodge(c, false); else hit(c);
+    return;
   }
-  if (!target || bestD > 0.28) return; // bond dans le vide : pas de pénalité
-  if (bestD <= PERFECT) kill(target, true);
-  else if (bestD <= GOOD) kill(target, false);
-  else escape(target, t);
+  const [p, d] = nearest(preys, tj);
+  if (!p || d > 0.28) return;                 // bond dans le vide : pas de pénalité
+  if (d <= PERFECT) kill(p, true); else if (d <= GOOD) kill(p, false); else escape(p, t);
+}
+function gain(perfect) {
+  combo++; mult = combo >= 24 ? 8 : combo >= 16 ? 4 : combo >= 8 ? 2 : 1;
+  score += (perfect ? 300 : 100) * mult;
+  judge(perfect ? 'parfait' : 'bien');
+  if (audioClock) son.kill(perfect, combo);
+  if (navigator.vibrate) navigator.vibrate(perfect ? 22 : 10);
+  updateHud();
 }
 function kill(p, perfect) {
-  p.done = true; p.killed = true; p.doneAt = songTime(); p.tr.visible = false;
-  combo++;
-  mult = combo >= 24 ? 8 : combo >= 16 ? 4 : combo >= 8 ? 2 : 1;
-  score += (perfect ? 300 : 100) * mult;
-  judge(perfect ? 'parfait' : 'bien');
-  emitBurst(p.tr.position.clone().add(new THREE.Vector3(0, 0.9, 0)), perfect ? 140 : 60);
-  shake = perfect ? 0.35 : 0.18; flash = perfect ? 1 : 0.5;
-  if (ctx) thump(perfect ? 1 : 0.6);
-  if (navigator.vibrate) navigator.vibrate(perfect ? 25 : 12);
-  updateHud();
-}
-function escape(p, t) { p.done = true; p.doneAt = t; combo = 0; mult = 1; judge('rate'); updateHud(); }
-
-// ----- Fuite : esquiver les bonds de la panthère -----
-function fuiteRelease(t) {
-  const tj = t - latency();
-  let target = null, bestD = 999;
-  for (const c of cues) {
-    if (c.done) continue;
-    const d = Math.abs(tj - c.t);
-    if (d < bestD) { bestD = d; target = c; }
-    if (c.t > tj + 1) break;
+  p.done = true; p.killed = true; p.doneAt = songTime();
+  if (p.beast) {
+    dissolve(p.beast, perfect ? 420 : 260, sporeGold, true, PREY_SPEED);   // elle se désagrège là où elle se trouvait
+    const pos = p.beast.root.position;
+    U.uWave.value.set(pos.x, pos.z, U.uTime.value, perfect ? 1.0 : 0.5);    // et une onde de lumière traverse la forêt
+    p.beast.root.visible = false; p.beast.user = null; p.beast = null;
   }
-  if (!target || bestD > 0.28) return; // saut dans le vide : pas de pénalité
-  if (bestD <= PERFECT) dodge(target, true);
-  else if (bestD <= GOOD) dodge(target, false);
-  else hit(target);
+  shake = perfect ? 0.22 : 0.1; fovPunch = perfect ? 1 : 0.5;
+  gain(perfect);
 }
+function escape(p, t) { p.done = true; p.doneAt = t; combo = 0; mult = 1; judge('rate'); if (audioClock) son.miss(); updateHud(); }
 function dodge(c, perfect) {
   c.done = true; c.tr.visible = false;
-  combo++;
-  mult = combo >= 24 ? 8 : combo >= 16 ? 4 : combo >= 8 ? 2 : 1;
-  score += (perfect ? 300 : 100) * mult;
-  gap = Math.min(GAP_MAX, gap + (perfect ? 0.6 : 0.2));
-  dodgeSide = -dodgeSide;
-  chaserPounce = c.t; // la panthère bondit… dans le vide
-  judge(perfect ? 'parfait' : 'bien');
-  emitBurst(deer.position.clone().add(new THREE.Vector3(0, 0.6, -0.5)), perfect ? 90 : 40);
-  shake = perfect ? 0.25 : 0.12; flash = perfect ? 0.7 : 0.3;
-  if (ctx) thump(perfect ? 0.8 : 0.5);
-  if (navigator.vibrate) navigator.vibrate(perfect ? 20 : 10);
-  updateHud();
+  gap = Math.min(GAP_MAX, gap + (perfect ? 0.6 : 0.2)); dodgeSide = -dodgeSide; chaserPounce = c.t;
+  const pos = deer.root.position;
+  puff(pos.x, pos.y + 0.5, pos.z - 0.6, perfect ? 70 : 30, sporeGold, 0.8, 0.06);
+  U.uWave.value.set(pos.x, pos.z, U.uTime.value, perfect ? 0.8 : 0.4);
+  shake = perfect ? 0.16 : 0.08; fovPunch = perfect ? 0.8 : 0.4;
+  gain(perfect);
 }
 function hit(c) {
-  c.done = true; c.tr.visible = false;
-  combo = 0; mult = 1;
-  gap -= GAP_HIT;
-  chaserPounce = c.t;
-  judge('rate');
-  shake = 0.55;
-  if (ctx) thump(1);
+  c.done = true; c.tr.visible = false; combo = 0; mult = 1; gap -= GAP_HIT; chaserPounce = c.t;
+  judge('rate'); shake = 0.45; if (audioClock) son.hit();
   if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
   updateHud();
   if (gap <= 0.01) endRun(false);
 }
-
 function endRun(won) {
-  state = won ? State.Won : State.Dead;
-  deathTime = now();
+  state = won ? State.Won : State.Dead; deathTime = now();
   currentRun.score = score; currentRun.death = won ? 99999 : songTime();
   if (!won) {
-    (mode === 'fuite' ? deerModel : pantherModel).rotation.z = THREE.MathUtils.degToRad(80);
-    if (mode === 'fuite') { chaserPounce = songTime(); gap = 0; } // la panthère te rattrape
-    shake = 0.6; if (navigator.vibrate) navigator.vibrate([40, 40, 80]);
+    if (mode === 'fuite') { chaserPounce = songTime(); gap = 0; dissolve(deer, 380, sporeGold, false, 0); deer.root.visible = false; }
+    shake = 0.5; if (audioClock) son.hit(); if (navigator.vibrate) navigator.vibrate([40, 40, 80]);
   }
-  if (score > best) {
-    best = score; bestRun = currentRun;
-    try { localStorage.setItem('apex_best', best); localStorage.setItem('apex_ghost', JSON.stringify(bestRun)); } catch { /* stockage indisponible : on garde en mémoire */ }
-  }
+  if (score > best) { best = score; bestRun = currentRun; try { localStorage.setItem('apex_best', best); localStorage.setItem('apex_ghost', JSON.stringify(bestRun)); } catch { /* stockage indisponible */ } }
   waitRelease = held;
   showScreen();
 }
-
-// Pilote automatique (touche A ou ?auto=1) : reste baissé, relâche pile sur chaque proie.
-let autoLast = -1;
 
 // ---------- Entrées (un seul doigt) ----------
 function press() {
   if (held) return; held = true;
   if (state === State.Playing) { if (!waitRelease) currentRun.ev.push(Math.max(0.0001, songTime())); return; }
   if (waitRelease) return;
-  if (state === State.Menu || now() - deathTime > 0.6) { waitRelease = true; startRun(); }
+  if (state === State.Menu || now() - deathTime > 0.7) { waitRelease = true; startRun(); }
 }
 function release() {
   if (!held) return; held = false;
   if (waitRelease) { waitRelease = false; return; }
   if (state === State.Playing && !autopilot) { const t = songTime(); currentRun.ev.push(-Math.max(0.0001, t)); onRelease(t); }
 }
-addEventListener('pointerdown', (e) => { e.preventDefault(); audioInit(); press(); }, { passive: false });
-addEventListener('pointerup', release);
-addEventListener('pointercancel', release);
-addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) { audioInit(); press(); } } if (e.code === 'KeyA') autopilot = !autopilot; });
+addEventListener('pointerdown', (e) => { e.preventDefault(); son.init(); press(); }, { passive: false });
+addEventListener('pointerup', release); addEventListener('pointercancel', release);
+addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) { son.init(); press(); } } if (e.code === 'KeyA') autopilot = !autopilot; });
 addEventListener('keyup', (e) => { if (e.code === 'Space') release(); });
 addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ---------- Interface ----------
-const $ = (id) => document.getElementById(id);
 const fmt = (n) => n.toLocaleString('fr-FR');
-const judgeImg = { parfait: 'assets/juge-parfait.webp', bien: 'assets/juge-bien.webp', rate: 'assets/juge-rate.webp' };
-for (const src of [...Object.values(judgeImg), 'assets/fin-reperee.webp', 'assets/fin-conquis.webp', 'assets/fin-attrape.webp', 'assets/fuis.webp']) new Image().src = src;
-function judge(kind) { const j = $('juge'); j.src = judgeImg[kind]; j.classList.remove('pop'); void j.offsetWidth; j.classList.add('pop'); }
+const MOTS = { parfait: 'parfait', bien: 'bien', rate: 'manqué' };
+function judge(kind) { const j = $('juge'); j.textContent = MOTS[kind]; j.className = ''; void j.offsetWidth; j.className = 'pop ' + kind; }
 function banner() { const b = $('banniere'); b.classList.remove('show'); void b.offsetWidth; b.classList.add('show'); }
 function updateHud() {
   $('score').textContent = fmt(score);
-  $('serie').textContent = 'Série ' + combo;
+  $('serie').textContent = combo > 1 ? 'série ' + combo : '';
+  $('mult').classList.toggle('hide', mult <= 1); $('multN').textContent = '×' + mult;
   $('distance').classList.toggle('hide', mode !== 'fuite' || state !== State.Playing);
-  $('distanceBar').style.width = Math.max(0, Math.min(1, gap / GAP_MAX)) * 100 + '%';
+  $('distanceBar').style.width = clamp(gap / GAP_MAX, 0, 1) * 100 + '%';
   $('distanceBar').classList.toggle('danger', gap <= GAP_HIT + 0.01);
-  $('frenesie').classList.toggle('hide', mult <= 1);
-  $('frenesie').querySelector('span').textContent = '×' + mult;
 }
 function showScreen() {
-  $('menu').classList.toggle('hide', state !== State.Menu);
+  $('menu').classList.toggle('hide', state !== State.Menu || studio);
   $('hud').classList.toggle('hide', state === State.Menu);
   $('fin').classList.toggle('hide', state !== State.Dead && state !== State.Won);
-  $('record').textContent = best > 0 ? 'Record : ' + fmt(best) : '';
-  $('fantome').textContent = ghost.visible && bestRun ? 'Fantôme à battre : ' + fmt(bestRun.score) : '';
+  $('record').textContent = best > 0 ? 'record · ' + fmt(best) : '';
+  $('fantome').textContent = ghost.root.visible && bestRun ? 'fantôme à battre · ' + fmt(bestRun.score) : '';
   if (state === State.Dead || state === State.Won) {
     const caught = state === State.Dead && mode === 'fuite';
-    $('fin').querySelector('.titre').src = state === State.Won ? 'assets/fin-conquis.webp' : caught ? 'assets/fin-attrape.webp' : 'assets/fin-reperee.webp';
-    $('fin').querySelector('.titre').style.filter = caught ? 'brightness(1.7)' : ''; // lettres d'obsidienne : plus lisibles sur la jungle
-    $('finSous').textContent = caught ? 'Le prédateur a eu ta peau' : "Ta proie t'a repérée";
-    $('finSous').classList.toggle('hide', state === State.Won);
-    $('finScore').textContent = 'Score ' + fmt(score) + '   ·   Record ' + fmt(best);
-    $('juge').classList.remove('pop');
+    $('finTitre').textContent = state === State.Won ? 'Territoire conquis' : caught ? 'Attrapé' : 'Repérée';
+    $('finSous').textContent = state === State.Won ? 'La Canopée Noire est à toi.' : caught ? 'Le prédateur a eu ta peau.' : "Ta proie t'a entendue.";
+    $('finScore').textContent = 'score ' + fmt(score) + '  ·  record ' + fmt(best);
+    $('juge').className = '';
   }
   updateHud();
 }
 $('version').textContent = VERSION;
 
 // ---------- Boucle ----------
-function setGlow(k) { for (const g of glowMats) g.mat.color.copy(g.base).multiplyScalar(Math.min(k, 2.2)); }
+let dt = 0, last = now(), time = 0;
+const player = () => (mode === 'fuite' ? deer : panther);
+const tmpV = new THREE.Vector3();
+const prints = [], ripples = []; let printIdx = 0, rippleIdx = 0;
 
-function updatePanther(t) {
-  const z = t * SPEED;
-  let y = 0, lunge = 0;
-  const pt = pounceT >= 0 ? (t - pounceT) / 0.38 : 2;
-  if (pt >= 0 && pt <= 1) { y = Math.sin(pt * Math.PI) * 1.1; lunge = Math.sin(pt * Math.PI) * 0.9; }
-  panther.position.set(0, y, z + lunge);
-  const crouch = held && (pt < 0 || pt > 1) ? 0.62 : 1;
-  panther.scale.y += (crouch - panther.scale.y) * Math.min(1, dt * 18);
-  pantherModel.rotation.x = pt >= 0 && pt <= 1 ? -THREE.MathUtils.degToRad(18) * Math.cos(pt * Math.PI) : 0;
-}
-function updateGhost(t) {
-  if (!ghost.visible || !bestRun) return;
-  while (ghostIdx < bestRun.ev.length && Math.abs(bestRun.ev[ghostIdx]) <= t) {
-    const e = bestRun.ev[ghostIdx++];
-    if (e > 0) ghostHeld = true; else { ghostHeld = false; ghostPounce = -e; }
-  }
-  if (t > bestRun.death) { ghost.visible = false; $('fantome').textContent = ''; return; }
-  const pt = ghostPounce >= 0 ? (t - ghostPounce) / 0.38 : 2;
-  ghost.position.set(-1.8, pt >= 0 && pt <= 1 ? Math.sin(pt * Math.PI) * 1.1 : 0, t * SPEED);
-  ghost.scale.y = ghostHeld && (pt < 0 || pt > 1) ? 0.62 : 1;
-}
 function updatePreys(t) {
+  let nearestD = 1e9, nearestB = null;
   for (const p of preys) {
+    const zc = p.t * SPEED + 1.3, dtp = p.t - t;
     if (!p.done && t - latency() > p.t + GOOD) escape(p, t);
-    if (!p.tr.visible) continue;
-    if (p.done && !p.killed) {
-      p.tr.position.x += p.side * 9 * dt; p.tr.position.z += 6 * dt;
-      if (t - p.doneAt > 0.8) p.tr.visible = false;
-    } else if (Math.abs(p.tr.position.z - t * SPEED) < 150) {
-      p.tr.position.y = Math.abs(Math.sin((t / SPB) * Math.PI)) * 0.25;
-    }
+    if (p.killed) continue;
+    if (dtp > 9 || (p.done && t - p.doneAt > 1.4)) { if (p.beast) { p.beast.root.visible = false; p.beast.user = null; p.beast = null; } if (dtp > 9) break; continue; }
+    if (!p.beast) { const b = preyPool.find((b) => !b.user); if (!b) continue; b.user = p; p.beast = b; b.root.visible = true; b.cr = 0; p.x = 0; }
+    const b = p.beast;
+    let z, run = 0, look = 0, phase = (t * 2.3 + p.seed * 7) % 1;
+    if (p.done) {            // manquée : elle bondit hors du sentier
+      const k = t - p.doneAt; p.x = p.side * (k * 7 + k * k * 5); z = zc + k * (SPEED + 2.5); run = 1;
+    } else if (dtp > PREY_RUN) { z = zc - PREY_RUN * PREY_SPEED; look = Math.sin(t * 0.7 + p.seed * 9) * 0.5 + (dtp < PREY_RUN + 0.8 ? 1.0 : 0); phase = 0.2; }
+    else { z = zc - dtp * PREY_SPEED; run = 1; }
+    b.root.position.set(p.x, ground(p.x, z), z);
+    b.update(dt, { phase, run, crouch: 0, air: -1, look, lean: p.done ? p.side * 0.5 : 0 });
+    const d = Math.abs(z - t * SPEED);
+    if (!p.done && d < nearestD) { nearestD = d; nearestB = b; }
   }
-}
-function updateBranches(t) {
-  for (const b of branches) {
-    if (b.passed || t < b.t) continue;
-    b.passed = true;
-    // Le pilote automatique ne meurt jamais sur une branche (sinon une image sautée suffit à le tuer).
-    const crouched = autopilot || (held && (pounceT < 0 || t - pounceT > 0.35));
-    if (!crouched) { endRun(false); return; }
-  }
-}
-function updateWorld(t, z) {
-  for (const d of decor) if (d.position.z < z - 12) d.position.z += DECOR_SPAN;
-  const beat = t / SPB, b0 = Math.floor(beat);
-  for (let i = 0; i < bars.length; i++) bars[i].position.set(0, 0.01, (b0 + i) * SPB * SPEED + 1.1);
-  const phase = beat - b0;
-  const pulse = Math.exp(-phase * 7) * (b0 % 4 === 0 ? 1.4 : 0.8);
-  setGlow(0.7 + pulse * 0.9 + (mult / 8) * 1.2);
-  if (state === State.Playing && b0 >= 0 && b0 !== lastBeatRing) { lastBeatRing = b0; spawnRing(z, b0 % 4 === 0, t); }
-  for (const r of rings) {
-    const a = (t - r.born) / 0.7;
-    r.m.material.opacity = a >= 0 && a < 1 ? (1 - a) * 0.9 : 0;
-    const s = 0.4 + a * 4.2; r.m.scale.set(s, 1, s);
-  }
-  flash = Math.max(0, flash - dt * 3);
-  bloom.strength = 0.75 + mult * 0.06 + flash * 0.8 + pulse * 0.18;
-}
-// k = 0 : cadrage de la Traque (trois quarts arrière de la panthère)
-// k = 1 : cadrage de la Fuite (plus haut et plus loin, pour voir la panthère qui te talonne)
-function camBlend(t) {
-  if (mode !== 'fuite') return 0;
-  if (camBlendT < 0) return 1;
-  const a = Math.min(1, Math.max(0, (t - camBlendT) / 1.4));
-  return a * a * (3 - 2 * a);
-}
-function updateCamera(z, k = 0) {
-  shake = Math.max(0, shake - dt * 2.5);
-  const j = shake * 0.25;
-  const L = THREE.MathUtils.lerp;
-  camera.position.set(L(2.1, 2.6, k) + (Math.random() - 0.5) * j, L(2.9, 4.6, k) + (Math.random() - 0.5) * j, z - L(5.6, 11, k));
-  camera.lookAt(L(-0.3, -0.2, k), L(1.0, 0.6, k), z + L(5, 3, k));
+  return nearestB;
 }
 
-// ----- Fuite : le cerf (toi) et la panthère (le prédateur) -----
-function updateCues(t) {
-  for (const c of cues) {
-    if (c.done) continue;
-    if (c.t > t + 20) break;
-    if (t - latency() > c.t + GOOD) { hit(c); if (state !== State.Playing) return; }
-  }
-}
-function updateDeer(t) {
-  const z = t * SPEED;
-  let y = 0, x = 0, lunge = 0;
-  const pt = pounceT >= 0 ? (t - pounceT) / 0.38 : 2;
-  if (pt >= 0 && pt <= 1) { const s = Math.sin(pt * Math.PI); y = s * 1.15; lunge = s * 0.6; x = dodgeSide * 1.3 * s; }
-  deer.position.set(x, y, z + lunge);
-  const crouch = held && (pt < 0 || pt > 1) ? 0.62 : 1;
-  deer.scale.y += (crouch - deer.scale.y) * Math.min(1, dt * 18);
-  deerModel.rotation.x = pt >= 0 && pt <= 1 ? -THREE.MathUtils.degToRad(15) * Math.cos(pt * Math.PI) : 0;
-  deerModel.rotation.y = pt >= 0 && pt <= 1 ? dodgeSide * 0.35 * Math.sin(pt * Math.PI) : 0;
-}
-function updateChaser(t) {
-  gapShown += (gap - gapShown) * Math.min(1, dt * 4);
-  let off = 1.8 + Math.max(0, gapShown) * 0.45; // distance réelle derrière le cerf
-  if (camBlendT >= 0) off *= Math.min(1, Math.max(0, (t - camBlendT) / 1.0)); // à la bascule, la panthère « décroche »
-  const cp = chaserPounce >= 0 ? (t - chaserPounce) / 0.45 : 2;
-  let y = Math.abs(Math.sin((t / SPB) * Math.PI)) * 0.08, lunge = 0;
-  if (cp >= 0 && cp <= 1) { const s = Math.sin(cp * Math.PI); y = s * 1.3; lunge = s * off * (state === State.Playing ? 0.7 : 1); }
-  panther.position.set(0, y, deer.position.z - off + lunge);
-  panther.scale.y = 1;
-  pantherModel.rotation.set(cp >= 0 && cp <= 1 ? -THREE.MathUtils.degToRad(20) * Math.cos(cp * Math.PI) : 0, 0, 0);
+function updateGhost(t, phase) {
+  if (!ghost.root.visible || !bestRun) return;
+  while (ghostIdx < bestRun.ev.length && Math.abs(bestRun.ev[ghostIdx]) <= t) { const e = bestRun.ev[ghostIdx++]; if (e > 0) ghostHeld = true; else { ghostHeld = false; ghostPounce = -e; } }
+  if (t > bestRun.death) { ghost.root.visible = false; $('fantome').textContent = ''; return; }
+  const pt = ghostPounce >= 0 ? (t - ghostPounce) / 0.38 : 2, air = pt >= 0 && pt <= 1, z = t * SPEED;
+  ghost.root.position.set(-1.5, ground(-1.5, z), z);
+  ghost.update(dt, { phase, run: 1, crouch: ghostHeld && !air ? 1 : 0, air: air ? pt : -1, y: air ? Math.sin(pt * Math.PI) * 0.95 : 0 });
 }
 
-let dt = 0, last = now();
 function frame() {
   requestAnimationFrame(frame);
-  const tn = now(); dt = Math.min(0.05, tn - last); last = tn;
+  const tn = now(), rawDt = tn - last; dt = Math.min(0.05, rawDt); last = tn; time += dt;
+  adapt(rawDt);
+  U.uTime.value = time; grade.uniforms.uTime.value = time % 10;
 
-  if (state === State.Playing) {
-    const t = songTime();
+  const playing = state === State.Playing;
+  let t = 0, nearPrey = null;
+  if (playing) {
+    t = songTime();
     if (mode === 'traque' && transferT > 0 && t >= transferT) beginFuite(t);
     if (autopilot) {
-      // Relâche pile à l'instant de chaque proie (ou bond), même si des images ont sauté entre deux frames.
       held = true;
-      for (const p of mode === 'fuite' ? cues : preys) {
-        if (p.t > t) break;
-        if (p.t > autoLast && !p.done) onRelease(p.t + latency());
-      }
+      for (const p of mode === 'fuite' ? cues : preys) { if (p.t > t) break; if (p.t > autoLast && !p.done) onRelease(p.t + latency()); }
       autoLast = t;
     }
-    scheduleMusic();
-    updatePreys(t);
-    if (mode === 'traque') { updatePanther(t); updateGhost(t); }
-    else { updateCues(t); updateDeer(t); updateChaser(t); }
-    if (state === State.Playing) updateBranches(t);
-    updateWorld(t, t * SPEED);
-    updateCamera(mode === 'fuite' ? deer.position.z : panther.position.z, camBlend(t));
-    if (t > levelEnd && state === State.Playing) endRun(true);
-  } else {
-    // Menu / fin : la jungle respire au tempo, la panthère piétine.
-    const k = tn;
-    if (state === State.Menu) panther.position.set(0, Math.abs(Math.sin(k * 2)) * 0.15, 0);
-    if (state === State.Dead && mode === 'fuite') updateChaser(songTime()); // la panthère finit son bond sur toi
-    const beat = k * BPM / 60; const pulse = Math.exp(-(beat - Math.floor(beat)) * 7);
-    setGlow(0.7 + pulse * 0.6);
-    bloom.strength = 0.75 + pulse * 0.15;
-    flash = Math.max(0, flash - dt * 3);
-    updateCamera(mode === 'fuite' ? deer.position.z : panther.position.z, mode === 'fuite' ? 1 : 0);
+    son.schedule();
   }
-  updateBurst(dt);
-  updateAmbient(panther.position.z, tn);
+  const tt = state === State.Menu ? time : songTime();
+  const z = Math.max(0, tt) * SPEED;
+  const beat = tt / SPB, b0 = Math.floor(beat), phase = (((beat % 1) + 1) % 1 + 0.18) % 1;
+
+  if (state === State.Menu) {
+    // Menu : la panthère trottine dans la jungle qui défile lentement.
+    panther.root.position.set(0, ground(0, time * 2.2), time * 2.2);
+    panther.update(dt, { phase: (time * 1.1) % 1, run: 0.55, crouch: 0, air: -1, look: Math.sin(time * 0.5) * 0.25 });
+  } else if (mode === 'traque') {
+    if (playing) {
+      nearPrey = updatePreys(t);
+      const pt = pounceT >= 0 ? (t - pounceT) / 0.38 : 2, air = pt >= 0 && pt <= 1;
+      const y = air ? Math.sin(pt * Math.PI) * 0.95 : 0, lunge = air ? Math.sin(pt * Math.PI) * 0.9 : 0;
+      panther.root.position.set(0, ground(0, z + lunge), z + lunge);
+      const pose = params.get('pose'); // réglage des animations : ?studio=1&pose=run|crouch|air
+      if (pose) panther.update(dt, { phase, run: 1, crouch: pose === 'crouch' ? 1 : 0, air: pose === 'air' ? 0.5 : -1, y: pose === 'air' ? 0.95 : 0 });
+      else panther.update(dt, { phase, run: 1, crouch: held && !air ? 1 : 0, air: air ? pt : -1, y });
+      if (air && pt > 0.9 && !panther.landed) { panther.landed = true; puff(0, panther.root.position.y + 0.1, panther.root.position.z + 0.6, 26, sporeTeal, 0.9, 0.045); }
+      if (!air) panther.landed = false;
+      updateGhost(t, phase);
+    } else panther.update(dt, { phase: 0.2, run: 0, crouch: 1, air: -1 });   // repérée : elle se tapit
+  } else {
+    // Fuite : on est le cerf, la panthère talonne.
+    if (playing) {
+      for (const c of cues) { if (c.done) continue; if (c.t > t + 20) break; if (t - latency() > c.t + GOOD) { hit(c); if (state !== State.Playing) break; } }
+    }
+    if (state === State.Playing) {
+      const pt = pounceT >= 0 ? (t - pounceT) / 0.38 : 2, air = pt >= 0 && pt <= 1, s = air ? Math.sin(pt * Math.PI) : 0;
+      const x = dodgeSide * 1.3 * s, zz = z + s * 0.6;
+      leanS += ((air ? dodgeSide * Math.cos(pt * Math.PI) : 0) - leanS) * Math.min(1, dt * 12);
+      deer.root.position.set(x, ground(x, zz), zz);
+      deer.update(dt, { phase: (beat + 0.3) % 1, run: 1, crouch: held && !air ? 1 : 0, air: air ? pt : -1, y: s, lean: leanS });
+    }
+    gapShown += (gap - gapShown) * Math.min(1, dt * 4);
+    let off = 2.2 + Math.max(0, gapShown) * 0.5;
+    if (camBlendT >= 0) off *= clamp((tt - camBlendT) / 1.0, 0, 1);
+    const cp = chaserPounce >= 0 ? (tt - chaserPounce) / 0.45 : 2, cair = cp >= 0 && cp <= 1, cs = cair ? Math.sin(cp * Math.PI) : 0;
+    const cz = deer.root.position.z - off + cs * off * (playing ? 0.7 : 1);
+    panther.root.position.set(0, ground(0, cz), cz);
+    panther.update(dt, { phase, run: !playing && cp > 1 ? 0 : 1, crouch: 0, air: cair ? cp : -1, y: cs * 1.1 });
+  }
+  if (state === State.Playing) {
+    for (const b of branches) {
+      if (b.passed || t < b.t) continue; b.passed = true;
+      const crouched = autopilot || (held && (pounceT < 0 || t - pounceT > 0.35));
+      if (!crouched) { endRun(false); break; }
+    }
+    if (t > levelEnd && state === State.Playing) endRun(true);
+  }
+
+  // ----- Lumière : rien ne clignote. La jungle s'éveille lentement avec la série. -----
+  const P = player().root.visible ? player() : panther, pp = P.root.position, py = P.body.position.y;
+  vital += ((state === State.Playing ? 0.25 + 0.75 * Math.min(1, combo / 20) : 0.35) - vital) * Math.min(1, dt * 0.9);
+  U.uVital.value = vital;
+  charge = Math.max(0, charge - dt * 0.5);
+  const heart = 0.5 + 0.5 * Math.cos((beat % 1) * Math.PI * 2);            // battement discret, jamais un flash
+  for (const m of stripeMats) m.emissiveIntensity = 0.85 + 0.5 * vital + charge * 0.9 + heart * 0.08;
+  U.uPlayer.value.set(pp.x, pp.y + py, pp.z);
+  selfLight.color.copy(mode === 'fuite' ? C.or : C.cyan); selfLight.intensity = 5 + 4 * vital + charge * 5;
+  selfLight.position.set(pp.x, pp.y + 2.0 + py, pp.z + 1.4);
+  if (mode === 'fuite') { preyLight.color.copy(C.cyan); preyLight.position.copy(panther.root.position); preyLight.position.y += 1.2; preyLight.intensity = 9; }
+  else {
+    preyLight.color.set('#ffbf6a');
+    if (nearPrey) { preyLight.position.copy(nearPrey.root.position); preyLight.position.y += 1.1; }
+    preyLight.intensity += ((nearPrey ? 11 : 0) - preyLight.intensity) * Math.min(1, dt * 4);
+  }
+
+  // ----- Empreintes et ondes : le sol mouillé s'allume sous les pattes, sur le temps -----
+  if (state === State.Playing && b0 >= 0 && b0 !== lastBeat) {
+    lastBeat = b0;
+    const fx = pp.x, fz = pp.z + 0.5;
+    for (const sx of [-0.2, 0.2]) { prints[printIdx % 24] = { x: fx + sx, z: fz + (sx > 0 ? 0.15 : -0.1), born: time }; printIdx++; }
+    ripples[rippleIdx % 6] = { x: fx, z: fz, born: time, strong: b0 % 4 === 0 }; rippleIdx++;
+  }
+  const tint = mode === 'fuite' ? C.or : (vital > 0.6 ? C.violet : C.cyan);
+  for (let i = 0; i < 24; i++) { const p = prints[i]; if (!p) continue; const a = (time - p.born) / 2.4; if (a >= 1) { world.dyn.hide(8 + i); prints[i] = null; } else world.dyn.set(8 + i, p.x, p.z, 0.3, tint, (1 - a) * (1 - a) * 0.55, 0); }
+  for (let i = 0; i < 6; i++) { const p = ripples[i]; if (!p) continue; const a = (time - p.born) / 1.1; if (a >= 1) { world.dyn.hide(32 + i); ripples[i] = null; } else world.dyn.set(32 + i, p.x, p.z, 0.35 + a * (p.strong ? 2.6 : 1.7), tint, (1 - a) * (1 - a) * (p.strong ? 0.3 : 0.16), 1); }
+  world.dyn.set(0, pp.x, pp.z, 2.3, mode === 'fuite' ? C.or : C.cyan, 0.09 + 0.1 * vital + charge * 0.2, 0);
+  if (nearPrey) world.dyn.set(1, nearPrey.root.position.x, nearPrey.root.position.z, 2.6, C.or, 0.32, 0); else world.dyn.hide(1);
+  if (mode === 'fuite') world.dyn.set(2, panther.root.position.x, panther.root.position.z, 3, C.cyan, 0.3, 0); else world.dyn.hide(2);
+
+  // ----- Caméra : basse, proche, portée par des ressorts -----
+  shake = Math.max(0, shake - dt * 2.2); fovPunch = Math.max(0, fovPunch - dt * 2.5);
+  let kk = 0;
+  if (mode === 'fuite') { const a = camBlendT < 0 ? 1 : clamp((tt - camBlendT) / 1.4, 0, 1); kk = a * a * (3 - 2 * a); }
+  const gy = pathH(pp.z);
+  camY += (gy + L(1.95, 3.4, kk) - (P.cr || 0) * 0.32 + Math.max(0, py) * 0.3 - camY) * Math.min(1, dt * 7);
+  if (studio) { camera.position.set(3.3, pp.y + 0.9, pp.z + 0.1); camera.lookAt(0, pp.y + 0.7, pp.z + 0.1); }
+  else {
+    camera.position.set(L(0.6, 1.5, kk) + Math.sin(time * 0.7) * 0.04 + (Math.random() - 0.5) * shake * 0.2, camY + (Math.random() - 0.5) * shake * 0.2, pp.z - L(5.7, 10, kk));
+    camera.lookAt(pp.x * 0.35, gy + L(0.95, 0.75, kk), pp.z + L(9, 4.2, kk));
+  }
+  const fov = 60 + 3 * vital + fovPunch * 2.2;
+  if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  const cz = camera.position.z;
+  U.uCamZ.value = cz;
+  U.uBend.value.set(studio ? 0 : 0.00085 * Math.sin(cz * 0.012) + 0.0004 * Math.sin(cz * 0.031 + 1), studio ? 0 : -0.00032);
+  world.follow(camera.position);
+  moon.position.set(-5, 10, cz - 8); moon.target.position.set(0, 0, cz + 6);
+  bloom.strength = 0.5 + 0.12 * vital + charge * 0.12;
+
+  updateSpores(dt, time, mode === 'traque' ? tmpV.set(pp.x, pp.y + 0.9, pp.z + 0.3) : null);
   composer.render();
+}
+
+// Qualité adaptative : si le téléphone peine, on réduit la définition plutôt que la fluidité.
+let fAcc = 0, fN = 0, drops = 0;
+function adapt(d) {
+  if (d > 0.2 || d <= 0) return;             // onglet caché ou reprise : on ignore
+  fAcc += d; fN++;
+  if (fN < 90) return;
+  const avg = fAcc / fN; fAcc = 0; fN = 0;
+  if (avg > 0.0215 && drops < 3) { drops++; pixelRatio = Math.max(0.75, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); resize(); }
 }
 
 function resize() {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
-  fitBackdrop();
+  world.resize(innerHeight * pixelRatio); spores.material.uniforms.uScale.value = innerHeight * pixelRatio * 1.1;
 }
 addEventListener('resize', resize);
 resize();
@@ -706,5 +544,4 @@ $('chargement').classList.add('hide');
 showScreen();
 frame();
 
-// Accès de test depuis la console : APEX.start(), APEX.auto = true…
-window.APEX = { start: startRun, get state() { return state; }, set auto(v) { autopilot = v; }, get score() { return score; }, endRun };
+window.APEX = { start: startRun, get state() { return state; }, set auto(v) { autopilot = v; }, get score() { return score; }, endRun, panther, deer, get mode() { return mode; }, get px() { return pixelRatio; } };
