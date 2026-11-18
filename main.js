@@ -12,7 +12,7 @@ import { U, patch, buildWorld, ground, pathH } from './monde.js';
 import { Beast, PANTHER, DEER } from './betes.js';
 import { Son } from './son.js';
 
-const VERSION = 'v1.0 · refonte';
+const VERSION = 'v1.0.1 · refonte';
 const BPM = 120, SPB = 60 / BPM, SPEED = 9, PERFECT = 0.045, GOOD = 0.09, BARS = 64, SEED = 1789;
 const params = new URLSearchParams(location.search);
 let autopilot = params.has('auto');
@@ -80,8 +80,8 @@ const ghostMat = () => patch(new THREE.MeshBasicMaterial({ color: new THREE.Colo
 
 const panther = new Beast(gPanther, { length: 2.5, material: pantherMat, gait: PANTHER }); scene.add(panther.root);
 const ghost = new Beast(gPanther, { length: 2.5, material: ghostMat, gait: PANTHER }); ghost.root.visible = false; scene.add(ghost.root);
-const deer = new Beast(gDeer, { length: 1.65, material: glassMat(1.15), gait: DEER }); deer.root.visible = false; scene.add(deer.root);
-const preyPool = Array.from({ length: 7 }, () => { const b = new Beast(gDeer, { length: 1.55, material: glassMat(1.0), gait: DEER }); b.root.visible = false; scene.add(b.root); return b; });
+const deer = new Beast(gDeer, { length: 1.65, material: glassMat(0.9), gait: DEER }); deer.root.visible = false; scene.add(deer.root);
+const preyPool = Array.from({ length: 7 }, () => { const b = new Beast(gDeer, { length: 1.55, material: glassMat(0.78), gait: DEER }); b.root.visible = false; scene.add(b.root); return b; });
 
 // ---------- Spores : la proie se désagrège, la lumière revient au chasseur ----------
 const NP = 1600;
@@ -481,7 +481,7 @@ function frame() {
   else {
     preyLight.color.set('#ffbf6a');
     if (nearPrey) { preyLight.position.copy(nearPrey.root.position); preyLight.position.y += 1.1; }
-    preyLight.intensity += ((nearPrey ? 11 : 0) - preyLight.intensity) * Math.min(1, dt * 4);
+    preyLight.intensity += ((nearPrey ? 6 : 0) - preyLight.intensity) * Math.min(1, dt * 4);
   }
 
   // ----- Empreintes et ondes : le sol mouillé s'allume sous les pattes, sur le temps -----
