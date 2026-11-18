@@ -44,6 +44,18 @@
   #juge.pop { animation:pop .6s ease-out forwards; }
   @keyframes pop { 0% { opacity:1; transform:translate(-50%,-50%) scale(1.35) } 25% { opacity:1; transform:translate(-50%,-50%) scale(1) } 50% { opacity:1 } 100% { opacity:0; transform:translate(-50%,-50%) scale(1) } }
 
+  /* Fuite */
+  #distance { position:absolute; left:4.3vw; bottom:calc(env(safe-area-inset-bottom) + 3vh); width:min(60vw, 32vh); }
+  #distance span { display:block; font-size:min(3.8vw, 1.9vh); font-weight:600; color:#FFD9A0; margin-bottom:.5vh; }
+  .jauge { height:min(2.4vw, 1.2vh); border-radius:99px; background:rgba(30,27,75,.75); box-shadow:0 0 0 1px rgba(226,172,94,.45); overflow:hidden; }
+  #distanceBar { height:100%; width:75%; border-radius:99px; background:linear-gradient(90deg, #E2AC5E, #FFE7B0); box-shadow:0 0 12px #E2AC5E; transition:width .25s ease-out; }
+  #distanceBar.danger { background:linear-gradient(90deg, #E82ED6, #FF8AE6); box-shadow:0 0 14px #E82ED6; animation:respire .4s ease-in-out infinite; }
+  #banniere { position:absolute; left:50%; top:30%; width:min(92vw, 50vh); transform:translate(-50%,-50%); text-align:center; opacity:0; }
+  #banniere img { width:100%; display:block; }
+  #banniere p { margin:-1vh 0 0; font-size:min(4.4vw, 2.2vh); font-weight:700; line-height:1.3; }
+  #banniere.show { animation:banniere 3.4s ease-out forwards; }
+  @keyframes banniere { 0% { opacity:0; transform:translate(-50%,-50%) scale(1.6) } 10% { opacity:1; transform:translate(-50%,-50%) scale(1) } 80% { opacity:1 } 100% { opacity:0 } }
+
   /* Fin */
   #fin { position:absolute; inset:0; }
   #fin .titre { position:absolute; left:50%; top:45%; width:min(95vw, 52vh); transform:translate(-50%,-50%); }
@@ -78,7 +90,9 @@
     <div id="serie" class="ombre">Série 0</div>
     <div id="fantome" class="ombre"></div>
     <div id="frenesie" class="hide"><img src="assets/frenesie.webp" alt="FRÉNÉSIE"><span class="ombre">×2</span></div>
+    <div id="distance" class="hide"><span class="ombre">Avance sur le prédateur</span><div class="jauge"><div id="distanceBar"></div></div></div>
   </div>
+  <div id="banniere"><img src="assets/fuis.webp" alt="FUIS !"><p class="ombre">Les rôles s'inversent : tu es la proie.<br>Relâche sur les griffes pour esquiver.</p></div>
   <img id="juge" alt="">
   <div id="fin" class="hide">
     <img class="titre" alt="">
