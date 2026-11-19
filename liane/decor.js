@@ -1,6 +1,6 @@
 // LIANE — le décor : tout est dessiné par le code, en silhouettes et en lumière. Aucune image, aucun film.
 // Chaque plan de forêt est peint une fois dans une bande qui se répète, puis glisse à sa propre vitesse.
-import { rnd } from './jeu.js?v=6';
+import { rnd } from './jeu.js?v=7';
 
 const TAU = Math.PI * 2;
 

@@ -1,12 +1,12 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des skins.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=6';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=6';
-import { corps, poseSinge, dessinerSinge, PERCHE } from './singe.js?v=6';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=6';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=7';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=7';
+import { corps, poseSinge, dessinerSinge, PERCHE } from './singe.js?v=7';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=7';
 
-const VERSION = 'v0.4';
+const VERSION = 'v0.5';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -27,7 +27,7 @@ function resize() {
   dpr = Math.max(1, Math.min(devicePixelRatio || 1, 2) * qualite);
   W = cv.width = Math.round(innerWidth * dpr); H = cv.height = Math.round(innerHeight * dpr);
   portrait = H > W * 1.1;
-  S = portrait ? W / 14 : H / 14; ancre = portrait ? 0.24 : 0.44;       // téléphone debout : on recule, pour voir venir la liane suivante
+  S = portrait ? W / 14 : H / 14; ancre = portrait ? 0.4 : 0.44;       // téléphone debout : on recule, pour voir venir la liane suivante
   baseY = portrait ? H - 3.4 * S : H - 0.95 * S;
   liberer(D); D = buildDecor(W, H, S, baseY, +(params.get('decor') || 7));
   $('tourne').classList.toggle('vu', !portrait); clearTimeout(tourneT); if (portrait) tourneT = setTimeout(() => $('tourne').classList.add('vu'), 7000);
@@ -291,7 +291,7 @@ function frame() {
 
   // La caméra devance le singe d'autant plus qu'il va vite, et suit à peine sa hauteur. À l'accueil, elle le décale à droite du titre.
   vue += ((phase === 'accueil' && !portrait ? 0.66 : ancre) - vue) * Math.min(1, real * 3);
-  camLead += (clamp(M.vx * 0.32, 1.5, 6.5) - camLead) * Math.min(1, dt * 1.6);
+  camLead += (clamp(M.vx * 0.32, 1.5, portrait ? 2 : 6.5) - camLead) * Math.min(1, dt * 1.6);   // téléphone debout : la caméra devance moins, pour garder tout le singe à l'image
   camX += (M.x + camLead - camX) * Math.min(1, dt * 7);
   camDy += ((Math.max(M.y, 0) - 6) * S * 0.3 - camDy) * Math.min(1, dt * 2.5);
 
