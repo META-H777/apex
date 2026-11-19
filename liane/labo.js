@@ -1,8 +1,8 @@
 // LIANE — l'atelier du singe : le même mouvement que dans le jeu, découpé image par image, pour juger chaque pose.
 // Paramètres d'adresse : s = chaine | attente | depart | rebond ; de = instant de départ (s) ; n = nombre d'images ; pas = pas de 1/120 s entre deux images ;
 // col = images par ligne ; px = pixels par mètre ; graine ; monde.
-import { Jeu, MONDES, pilote, rnd } from './jeu.js?v=8';
-import { corps, poseSinge, dessinerSinge, PERCHE } from './singe.js?v=8';
+import { Jeu, MONDES, pilote, rnd } from './jeu.js?v=9';
+import { corps, poseSinge, dessinerSinge, PERCHE } from './singe.js?v=9';
 const P = new URLSearchParams(location.search), num = (k, d) => (P.has(k) ? +P.get(k) : d);
 const sc = P.get('s') || 'chaine';
 let de = num('de', 1.2);

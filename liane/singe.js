@@ -4,11 +4,12 @@
 // Les poses viennent de vrais singes-araignées filmés, étudiés image par image (voir liane/SINGE-REEL.md, partie « Ce que montrent les films ») :
 //  - Suspendu, il tient par un bras tendu ET par la queue, qui s'accroche comme un second bras. Le tronc est couché entre les deux,
 //    l'arrière-train en arrière, la tête devant l'épaule. L'autre bras pend. Les jambes pendent, pliées, molles, et pédalent un peu.
-//  - Avant de lâcher, la queue quitte la première et se dresse derrière lui, en point d'interrogation ; le bras libre part vers l'avant.
+//  - La queue est portée derrière lui, un peu relevée, le bout recourbé : un balancier, qui ondule sans s'agiter.
+//    Elle ne saisit la liane que s'il s'y attarde. Avant de lâcher, le bras libre part vers l'avant.
 //  - Le saut : corps à l'horizontale, ventre vers le bas, les deux bras tendus devant, les jambes derrière, la queue dans le prolongement.
 //  - À la saisie, la main arrive la première ; le corps, lancé, passe dessous comme un poids ; la queue vient reprendre la liane.
 //  - Proportions mesurées sur les films : bras (main comprise) 1,35 fois le tronc, jambe 1 fois, queue 1,5 fois, tronc épais, petite tête ronde.
-import { CFG } from './jeu.js?v=8';
+import { CFG } from './jeu.js?v=9';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k, TAU = Math.PI * 2;
 const lisse = (k) => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
@@ -24,7 +25,7 @@ export const PERCHE = 1.52 * K;
 
 export function corps() {
   return { mode: null, tS: 9, tA: 9, alt: 1, bras: 0, brasV: 0, tronc: -0.4, troncV: 0, flex: 0.4, flexV: 0,
-    cuisse: [0.9, 1.1], cuisseV: [0, 0], genou: [1.8, 1.9], genouV: [0, 0], h2: [0.2, 0.5], regard: 0, pret: 0, pas: 0, haut: 0,
+    cuisse: [0.9, 1.1], cuisseV: [0, 0], genou: [1.8, 1.9], genouV: [0, 0], h2: [0.2, 0.5], regard: 0, pret: 0, pas: 0, haut: -0.5,
     ax: 0, ay: 0, pvx: 0, pvy: 0, pv: false, bas: 0, qtient: 0, mains: 1, squash: 0, queue: null, qbx: 0, qby: 0, ox: 0, oy: 0, rx: null, ry: 0 };
 }
 
@@ -53,15 +54,21 @@ export function poseSinge(M, B, dt, env = {}) {
   const approche = sw ? 0 : lisse(1 - (devant - 1.3) / 4.5) * (tend ? 1 : 0.3);    // en vol : 0 loin de la liane, 1 quand elle est à portée de bras
   const pente = sw ? 0 : clamp(Math.atan2(M.vy, Math.max(4, M.vx)), -0.7, 0.7);    // en vol : il monte (positif) ou il tombe
   const veutPret = monte && M.th > 0.1 && !attend;                                 // il remonte vers le lâcher : il se prépare à s'élancer
-  const traine = sw && !attend && !M.depart && (!monte || M.th < -0.35) && B.tS > 0.3;   // il s'attarde : la seconde main vient sur la liane
+  // S'il s'attarde sur une liane (il repart en arrière), la seconde main et la queue viennent la tenir, et y restent jusqu'au lâcher.
+  if (!sw || B.tS < 0.05) B.tard = false; else if (!attend && !M.depart && !monte && B.tS > 0.3) B.tard = true;
+  const traine = !!B.tard;
   for (let i = 0; i < n; i++) {
     B.tS += h; B.tA += h; B.pas += h * (sw ? 3.2 : 5);
     B.pret += ((veutPret ? 1 : 0) - B.pret) * Math.min(1, h * (veutPret ? 13 : 9));
     // La queue reprend la liane un instant après la main, et la lâche la première.
-    const veutQueue = sw && !attend && reste > 1 && B.tS > 0.07 && !veutPret;
-    B.qtient += ((veutQueue ? 1 : 0) - B.qtient) * Math.min(1, h * (veutQueue ? 16 : 20));
+    // La queue ne saisit la liane que s'il s'y attarde, et sans hâte. Dans une suite rapide de lianes elle reste derrière lui, en balancier :
+    // la faire saisir et lâcher à chaque liane lui faisait faire un tour complet, comme une hélice.
+    const veutQueue = traine && reste > ALLONGE + TRONC + 0.75 * K;       // il faut assez de liane sous lui pour l'enlacer
+    B.qtient += ((veutQueue ? 1 : 0) - B.qtient) * Math.min(1, h * (veutQueue ? 4 : 6));
     B.mains += (((attend || traine) ? 1 : 0) - B.mains) * Math.min(1, h * 9);
-    B.haut += ((sw && !attend ? 1 : 0) - B.haut) * Math.min(1, h * (sw ? 14 : 4.5));      // la queue dressée retombe peu à peu derrière lui une fois en vol
+    // La direction de la queue, dans le monde : derrière lui, un peu relevée. Elle suit lentement, sans épouser les à-coups du tronc.
+    const cQ = attend ? -0.5 : sw ? -1.95 + M.th * 0.25 : -1.75 + 0.4 * pente;
+    B.haut += ecart(cQ, B.haut) * Math.min(1, h * 5);
     // --- Le bras qui tient, de la main à l'épaule. Sur la liane il prolonge la corde, tendu. En vol il est pointé vers l'avant.
     const cBras = attend ? 0.06 : sw ? M.th : -1.34 + 0.45 * pente + 0.08 * approche;
     let acc = -(G / 0.75) * Math.sin(ecart(B.bras, aplomb)) * 1.2 + ecart(cBras, B.bras) * (sw ? 45 : 200) - B.brasV * (sw ? 8 : 24);
@@ -145,35 +152,36 @@ export function poseSinge(M, B, dt, env = {}) {
   const bx = hx - av[0] * 0.07 * K, by = hy - av[1] * 0.07 * K;
   if (!B.queue) { B.queue = []; for (let i = 0; i < QN; i++) B.queue.push({ x: bx - i * QSEG * 0.6, y: by + i * QSEG * 0.3, px: bx - i * QSEG * 0.6, py: by + i * QSEG * 0.3 }); B.qbx = bx; B.qby = by; }
   const Q = B.queue, dbx = bx - B.qbx, dby = by - B.qby; B.qbx = bx; B.qby = by;
-  // Libre sur la liane : dressée derrière lui, le bout recourbé vers l'avant, en point d'interrogation. En vol : dans le prolongement du dos, un peu relevée.
-  const base = attend ? -0.5 : B.tronc - lerp(0.2 + 0.25 * approche, 1.25, B.haut), tour = attend ? 0.02 : lerp(-0.022, -0.085, B.haut), crochet = attend ? 0.25 : lerp(-0.06, -0.2, B.haut);
+  // Libre : derrière lui, un peu relevée, en arc doux, le bout recourbé.
+  const base = B.haut, tour = attend ? 0.02 : -0.03, crochet = attend ? 0.25 : -0.1;
   Q[0].x = bx; Q[0].y = by; Q[0].px = bx; Q[0].py = by;
   if (dt > 0) for (let s = 0; s < n; s++) {
     let a = base;
     for (let i = 1; i < QN; i++) {
       const q = Q[i], t = i / (QN - 1);
       // L'élan du maillon est compté par rapport au corps, sinon la queue traînerait comme un ruban dès qu'il va vite.
-      const vx = (q.x - q.px - dbx / n) * 0.9 + dbx / n * (1 - 0.06 * t), vy = (q.y - q.py - dby / n) * 0.9 + dby / n * (1 - 0.06 * t);
+      const vx = (q.x - q.px - dbx / n) * 0.8 + dbx / n * (1 - 0.05 * t), vy = (q.y - q.py - dby / n) * 0.8 + dby / n * (1 - 0.05 * t);
       q.px = q.x; q.py = q.y; q.x += vx; q.y += vy - C.g * 0.16 * t * h * h;
       a += tour + (t > 0.6 ? crochet * (t - 0.6) / 0.4 * 2.1 : 0);
-      const o = dir(a), p = Q[i - 1], raide = 1 - Math.exp(-h * lerp(55, 10, Math.sqrt(t)));
+      const o = dir(a), p = Q[i - 1], raide = 1 - Math.exp(-h * lerp(60, 16, Math.sqrt(t)));
       q.x += (p.x + o[0] * QSEG - q.x) * raide; q.y += (p.y + o[1] * QSEG - q.y) * raide;
     }
     for (let k = 0; k < 3; k++) for (let i = 1; i < QN; i++) { const p = Q[i - 1], q = Q[i]; const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1e-4; q.x = p.x + dx / d * QSEG; q.y = p.y + dy / d * QSEG; }
   }
-  // En prise : elle monte de l'arrière-train jusqu'à la liane, sous les mains, comme un second bras, et l'enlace de son dernier quart.
+  // En prise (il s'attarde) : elle rejoint la liane sous lui et l'enlace sur une bonne longueur, bien visible sous le corps.
   let qd = Q;
   if (B.qtient > 0.02) {
-    const w = lisse(B.qtient), long = (QN - 1) * QSEG, d0 = clamp(0.5 * K, 0.25, Math.max(0.25, reste - 0.3 * K)), c0 = sur(d0); qd = [];
-    const ex = c0[0] - bx, ey = c0[1] - by, de = Math.hypot(ex, ey) || 1, lig = long * 0.8, mou = Math.sqrt(Math.max(0, lig * lig - de * de)) * 0.42;   // ce qu'il reste de longueur fait un ventre vers l'arrière
-    const nx = -ey / de, ny = ex / de, sens = nx * av[0] + ny * av[1] > 0 ? -1 : 1;                                                                // le ventre de la queue part du côté du dos
+    const w = lisse(B.qtient), f = 0.36, long = (QN - 1) * QSEG, d0 = lb + tl + 0.1 * K, c0 = sur(d0); qd = [];
+    const ex = c0[0] - bx, ey = c0[1] - by, de = Math.hypot(ex, ey) || 1, lig = long * f, mou = Math.sqrt(Math.max(0, lig * lig - de * de)) * 0.45;   // ce qu'il reste de longueur fait un ventre
+    const nx = -ey / de, ny = ex / de, sens = ny - nx * 0.5 >= 0 ? 1 : -1;                                                                // toujours du même côté : vers le haut et l'arrière
     for (let i = 0; i < QN; i++) {
       const t = i / (QN - 1), q = Q[i]; let tx, ty;
-      if (t <= 0.8) { const k = t / 0.8, b = Math.sin(k * Math.PI); tx = bx + ex * k + nx * sens * mou * b; ty = by + ey * k + ny * sens * mou * b; }
-      else { const k = (t - 0.8) / 0.2, c = sur(d0 + k * 0.2 * K), cote = Math.sin(k * 7.5) * 0.055 * K * (1 - 0.3 * k); tx = c[0] + Math.cos(B.bas) * cote; ty = c[1] + Math.sin(B.bas) * cote; }
+      if (t <= f) { const k = t / f, b = Math.sin(k * Math.PI); tx = bx + ex * k + nx * sens * mou * b; ty = by + ey * k + ny * sens * mou * b; }
+      else { const k = (t - f) / (1 - f), c = sur(d0 + k * 0.48 * K), cote = Math.sin(k * 12.5) * 0.06 * K * (1 - 0.3 * k); tx = c[0] + Math.cos(B.bas) * cote; ty = c[1] + Math.sin(B.bas) * cote; }
       qd.push({ x: lerp(q.x, tx, w), y: lerp(q.y, ty, w) });
     }
-    if (dt > 0 && w > 0.5) for (let i = 1; i < QN; i++) { Q[i].x = qd[i].x; Q[i].y = qd[i].y; Q[i].px = qd[i].x - dbx; Q[i].py = qd[i].y - dby; }   // la chaîne libre repartira de là
+    // La queue libre continue de vivre derrière lui pendant ce temps : quand elle lâche la liane, elle y revient d'un seul geste, sans fouetter.
+    for (let i = 1; i < QN; i++) { const p = qd[i - 1], q = qd[i], dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1e-4; q.x = p.x + dx / d * QSEG; q.y = p.y + dy / d * QSEG; }
   }
   return { px, py, sx, sy, hx, hy, jx, jy, bras, legs, tete, museau, queue: qd, av, bas: B.bas, saisi: B.tS };
 }

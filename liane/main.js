@@ -1,12 +1,12 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des skins.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=8';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=8';
-import { corps, poseSinge, dessinerSinge, PERCHE } from './singe.js?v=8';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=8';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=9';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=9';
+import { corps, poseSinge, dessinerSinge, PERCHE } from './singe.js?v=9';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=9';
 
-const VERSION = 'v0.5.1';
+const VERSION = 'v0.5.2';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
