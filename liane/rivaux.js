@@ -1,23 +1,23 @@
 // LIANE — les rivaux, le classement Elo, les rangs et les skins.
 // Un duel : même forêt pour les deux, celui qui va le plus loin gagne.
 // Tant qu'il n'y a pas de serveur, les rivaux sont simulés : chacun a son niveau, court vraiment le parcours, et laisse un fantôme.
-import { Jeu, rnd, pilote, MONDES } from './jeu.js?v=4';
+import { Jeu, rnd, pilote, MONDES } from './jeu.js?v=5';
 
 export const PARCOURS = [11, 23, 37, 41, 58, 64, 79, 86];   // les parcours du prototype : chaque numéro donne toujours la même forêt
 
 // ---------- Les skins : un habillage appliqué par le code (silhouette, liseré, traînée) ----------
 export const SKINS = [
   { id: 'ombre', nom: 'Ombre', seuil: 0, ink: '#04161a', rim: 'rgba(255,232,170,0.6)', trail: null },
-  { id: 'braise', nom: 'Braise', seuil: 900, ink: '#1c0a05', rim: 'rgba(255,150,70,0.95)', trail: '255,140,60' },
-  { id: 'givre', nom: 'Givre', seuil: 1050, ink: '#062230', rim: 'rgba(170,235,255,0.95)', trail: '150,225,255' },
-  { id: 'jade', nom: 'Jade', seuil: 1200, ink: '#04241a', rim: 'rgba(140,255,190,0.9)', trail: '120,240,170' },
-  { id: 'or', nom: 'Or', seuil: 1400, ink: '#2b1d05', rim: 'rgba(255,224,130,1)', trail: '255,215,110' },
-  { id: 'spectre', nom: 'Spectre', seuil: 1600, ink: 'rgba(238,248,255,0.94)', rim: 'rgba(255,255,255,0.5)', trail: '235,245,255' },
+  { id: 'braise', nom: 'Braise', seuil: 850, ink: '#1c0a05', rim: 'rgba(255,150,70,0.95)', trail: '255,140,60' },
+  { id: 'givre', nom: 'Givre', seuil: 1000, ink: '#062230', rim: 'rgba(170,235,255,0.95)', trail: '150,225,255' },
+  { id: 'jade', nom: 'Jade', seuil: 1150, ink: '#04241a', rim: 'rgba(140,255,190,0.9)', trail: '120,240,170' },
+  { id: 'or', nom: 'Or', seuil: 1300, ink: '#2b1d05', rim: 'rgba(255,224,130,1)', trail: '255,215,110' },
+  { id: 'spectre', nom: 'Spectre', seuil: 1450, ink: 'rgba(238,248,255,0.94)', rim: 'rgba(255,255,255,0.5)', trail: '235,245,255' },
 ];
 export const skinById = (id) => SKINS.find((s) => s.id === id) || SKINS[0];
 
 // ---------- Les rangs ----------
-export const RANGS = [[0, 'Bronze'], [1100, 'Argent'], [1250, 'Or'], [1400, 'Platine'], [1550, 'Diamant'], [1700, 'Maître']];
+export const RANGS = [[0, 'Bronze'], [950, 'Argent'], [1100, 'Or'], [1250, 'Platine'], [1400, 'Diamant'], [1500, 'Maître']];
 export function rang(elo) { let r = RANGS[0], n = null; for (const x of RANGS) { if (elo >= x[0]) r = x; else { n = x; break; } } return { nom: r[1], bas: r[0], suivant: n }; }
 
 // ---------- Les rivaux simulés ----------
@@ -59,12 +59,24 @@ export function etat(g, t, out) {
 
 // ---------- Le profil du joueur, gardé sur l'appareil ----------
 const CLE = 'liane-profil-2';
-export const profil = { elo: 800, skin: 'ombre', v: 0, d: 0, record: 0, records: {}, monde: 0 };   // on démarre bas, face à des rivaux à sa portée, et on grimpe
+export const profil = { elo: 800, skin: 'ombre', v: 0, d: 0, record: 0, records: {}, monde: 0, acquis: ['ombre'], enCours: null };   // on démarre bas, face à des rivaux à sa portée, et on grimpe
 try { Object.assign(profil, JSON.parse(localStorage.getItem(CLE) || '{}')); } catch (e) { /* stockage indisponible : la partie ne sera pas gardée */ }
+// Un profil abîmé ne doit jamais bloquer le jeu : on remet d'aplomb ce qui n'a pas la bonne forme.
+if (!Number.isFinite(profil.elo)) profil.elo = 800; profil.elo = Math.round(profil.elo);
+for (const k of ['v', 'd', 'record', 'monde']) if (!Number.isFinite(profil[k])) profil[k] = 0;
+if (!profil.records || typeof profil.records !== 'object') profil.records = {};
+if (!Array.isArray(profil.acquis)) profil.acquis = ['ombre'];
 export function garder() { try { localStorage.setItem(CLE, JSON.stringify(profil)); } catch (e) { /* rien */ } }
+// Un skin gagné reste gagné, même si l'Elo redescend ensuite.
+export function acquerir() { const neufs = SKINS.filter((s) => s.seuil <= profil.elo && !profil.acquis.includes(s.id)); for (const s of neufs) profil.acquis.push(s.id); return neufs; }
+export const possede = (s) => profil.acquis.includes(s.id) || s.seuil <= profil.elo;
+acquerir(); if (!SKINS.some((s) => s.id === profil.skin && possede(s))) profil.skin = 'ombre';
 
 // Le calcul Elo, tel qu'aux échecs : battre plus fort que soi rapporte plus.
 export function elo(moi, lui, gagne, K = 32) { const attendu = 1 / (1 + Math.pow(10, (lui - moi) / 400)); return Math.round(K * ((gagne ? 1 : 0) - attendu)); }
+// Ce que rapporte ou coûte un duel classé. Les premières victoires, tant qu'on n'a pas perdu, valent 100 points : un bon joueur trouve vite son rang.
+// Ensuite K vaut 32 jusqu'au 30e duel, puis 16 : le classement bouge moins une fois le niveau trouvé.
+export function gain(p, lui, gagne) { const n = p.v + p.d; if (gagne && p.d === 0 && n < 10) return 100; return elo(p.elo, lui, gagne, n < 30 ? 32 : 16); }
 // Un adversaire à sa mesure : pris au hasard parmi les cinq plus proches.
 export function adversaire(e, sauf) { const c = RIVAUX.filter((b) => b !== sauf).sort((a, b) => Math.abs(a.elo - e) - Math.abs(b.elo - e)).slice(0, 5); return c[(Math.random() * c.length) | 0]; }
 export function classement() { return [...RIVAUX.map((b) => ({ nom: b.nom, elo: b.elo, skin: b.skin })), { nom: 'toi', elo: profil.elo, skin: profil.skin, moi: true }].sort((a, b) => b.elo - a.elo); }

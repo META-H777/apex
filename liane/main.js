@@ -1,17 +1,17 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des skins.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=4';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=4';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, elo, adversaire, classement } from './rivaux.js?v=4';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=5';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=5';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=5';
 
-const VERSION = 'v0.3';
+const VERSION = 'v0.3.1';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const TAU = Math.PI * 2;
 const cv = $('ecran'), ctx = cv.getContext('2d', { alpha: false });
-const auto = params.get('auto');
+const auto = params.get('auto') === '1';        // le pilote joue tout seul, pour les mises au point : ses parties ne comptent jamais
 const OR = '255,214,120';
 // Un petit journal, gardé sur l'appareil : il dit pourquoi une partie a démarré ou s'est arrêtée. On le lit en ajoutant ?journal=1 à l'adresse.
 function journal(q) { try { const j = JSON.parse(localStorage.getItem('liane-journal') || '[]'); j.push([Date.now(), q]); localStorage.setItem('liane-journal', JSON.stringify(j.slice(-60))); } catch (e) { /* rien */ } }
@@ -28,14 +28,18 @@ function resize() {
   portrait = H > W * 1.1;
   S = portrait ? W / 14 : H / 14; ancre = portrait ? 0.24 : 0.44;       // téléphone debout : on recule, pour voir venir la liane suivante
   baseY = portrait ? H - 3.4 * S : H - 0.95 * S;
-  D = buildDecor(W, H, S, baseY, +(params.get('decor') || 7));
-  $('tourne').classList.toggle('vu', !portrait); if (portrait) setTimeout(() => $('tourne').classList.add('vu'), 7000);
+  liberer(D); D = buildDecor(W, H, S, baseY, +(params.get('decor') || 7));
+  $('tourne').classList.toggle('vu', !portrait); clearTimeout(tourneT); if (portrait) tourneT = setTimeout(() => $('tourne').classList.add('vu'), 7000);
 }
+// Les images de l'ancien décor sont vidées tout de suite : sur téléphone, la mémoire des images est comptée, et la dépasser recharge la page.
+let tourneT = 0;
+function liberer(d, vu = new Set()) { if (!d || typeof d !== 'object' || vu.has(d)) return; vu.add(d); if (typeof d.getContext === 'function') { d.width = d.height = 0; return; } for (const k in d) liberer(d[k], vu); }
 
 // ---------- L'état de la partie ----------
 let jeu, M, B, pil, camX = 0, camLead = 3, camDy = 0, time = 0, last = performance.now() / 1000;
 let phase = 'accueil';                 // accueil, course ou fin
 let parcours = PARCOURS[0], rival = null, G = null, Bg = null, t = 0, mortT = 0, depasse = false, ecartT = -9, ignoreUp = false;
+let classe = false, parti = false, aLever = false, appuiFrais = false;     // duel classé ou non ; premier geste fait ; un lever de doigt en attente du prochain pas
 let accueilT = -9, aide = 9, arcVu = null, arcT = 0, cransVus = -1, distVue = -1, nuitVue = '', fluide = 0.016, mesureT = 0;
 const Mg = {}, trail = [], rings = [];
 const X = (x) => (x - camX) * S + W * vue, Y = (y) => baseY - y * S + camDy;
@@ -54,50 +58,60 @@ function majAccueil() {
   $('mNom').textContent = monde.nom; $('mInfo').textContent = (monde.essai ? 'à l\'essai : des feuilles sur lesquelles on rebondit' : 'niveau ' + (i + 1) + ' sur ' + MONDES.filter((m) => !m.essai).length) + (rec ? ' · record ' + rec + ' m' : '');
 }
 function changerMonde(pas) {
+  if (phase !== 'accueil') return; accueilT = time;
   const i = (MONDES.indexOf(monde) + pas + MONDES.length) % MONDES.length; monde = MONDES[i]; profil.monde = i; garder();
   setPalette(monde.id); resize(); scene((Math.random() * 1e9) | 0, false); majAccueil();
 }
 function accueil() {
-  phase = 'accueil'; accueilT = time; scene((Math.random() * 1e9) | 0, false); majAccueil(); journal('accueil');
+  doigts.clear(); phase = 'accueil'; accueilT = time; scene((Math.random() * 1e9) | 0, false); majAccueil(); journal('accueil');
   $('fin').classList.remove('pret');
   for (const id of ['fin', 'hud', 'classement', 'skins']) $(id).classList.remove('on');
   $('accueil').classList.add('on'); taire();
 }
-function lancer(revanche, source = 'code') {
-  journal('duel lancé : ' + source); $('fin').classList.remove('pret');
-  if (!revanche || !rival) { parcours = PARCOURS[(Math.random() * PARCOURS.length) | 0]; rival = adversaire(profil.elo, rival); }
+// Un duel classé se joue contre un nouveau rival. Rejouer le même parcours contre le même rival est un entraînement : l'Elo ne bouge pas.
+// Le niveau d'essai et le pilote automatique ne comptent jamais.
+function lancer(rejouer, source = 'code') {
+  rejouer = rejouer && !!rival; journal((rejouer ? 'entraînement lancé : ' : 'duel lancé : ') + source); $('fin').classList.remove('pret'); doigts.clear(); aLever = appuiFrais = false;
+  if (!rejouer) { parcours = PARCOURS[(Math.random() * PARCOURS.length) | 0]; rival = adversaire(profil.elo, rival); }
+  classe = !rejouer && !auto && !monde.essai; parti = false;
   G = fantome(parcours, rival, monde); Bg = corps(); scene(parcours, true);
   phase = 'course'; t = 0; depasse = false; ecartT = -9; distVue = -1; nuitVue = ''; majCrans(0);
   aide = profil.v + profil.d < 3 ? 0 : 9;                // les premières parties, le jeu dit quoi faire, liane après liane
   for (const id of ['accueil', 'fin', 'classement', 'skins']) $(id).classList.remove('on');
   $('hud').classList.add('on'); $('chrono').textContent = '0 m'; $('ecart').className = 'maj'; $('nuit').classList.remove('on');
-  $('hMoi').textContent = 'toi · ' + profil.elo; $('hLui').textContent = rival.nom + ' · ' + Math.round(G.dist) + ' m';
+  // La distance du rival ne s'affiche qu'une fois parti : on ne choisit pas ses adversaires.
+  $('hMoi').textContent = classe ? 'toi · ' + profil.elo : 'toi · entraînement'; $('hLui').textContent = rival.nom + ' · ' + rival.elo;
   dire(aide === 0 ? 'pose le doigt et tiens' : 'tiens, puis lâche dans l\'arc doré');
 }
 // La partie est finie : celui qui est allé le plus loin gagne.
 function finir() {
-  const dist = Math.round(Math.max(0, M.x)), lui = Math.round(G.dist), gagne = dist > lui, avant = profil.elo, d = elo(profil.elo, rival.elo, gagne), rAvant = rang(avant).nom;
-  profil.elo = Math.max(100, profil.elo + d); if (gagne) profil.v++; else profil.d++;
+  const dist = Math.round(Math.max(0, M.x)), lui = Math.round(G.dist), gagne = dist > lui, avant = profil.elo, d = classe ? gain(profil, rival.elo, gagne) : 0, rAvant = rang(avant).nom;
+  if (classe) { profil.elo = Math.max(100, profil.elo + d); if (gagne) profil.v++; else profil.d++; profil.enCours = null; }
   profil.records = profil.records || {}; const rec = dist > (profil.records[monde.id] || 0); if (rec) profil.records[monde.id] = dist;
   profil.record = Math.max(profil.record || 0, dist);
   garder(); phase = 'fin'; taire(); journal('fin : ' + (M.mort === 'nuit' ? 'nuit' : 'chute') + ' à ' + dist + ' m');
-  const skin = SKINS.find((s) => s.seuil > avant && s.seuil <= profil.elo), rAp = rang(profil.elo).nom;
+  const skin = acquerir().pop(), rAp = rang(profil.elo).nom; if (skin) garder();
   $('fTitre').textContent = gagne ? 'victoire' : 'défaite'; $('fin').classList.toggle('perdu', !gagne);
   $('fTemps').textContent = dist + ' m';
   $('fLui').textContent = rival.nom + ' ' + lui + ' m · écart ' + (dist - lui >= 0 ? '+' : '−') + Math.abs(dist - lui) + ' m';
   $('fCause').textContent = (M.mort === 'nuit' ? 'rattrapé par la nuit' : 'tombé') + (rec ? ' · nouveau record' : ' · record ' + profil.records[monde.id] + ' m');
-  $('fElo').textContent = avant + ' → ' + profil.elo + ' (' + (d >= 0 ? '+' : '−') + Math.abs(d) + ')';
-  $('fPlus').textContent = skin ? 'nouveau skin : ' + skin.nom : rAp !== rAvant ? 'nouveau rang : ' + rAp : rang(profil.elo).nom;
+  $('fElo').textContent = classe ? avant + ' → ' + profil.elo + ' (' + (d >= 0 ? '+' : '−') + Math.abs(d) + ')' : 'entraînement';
+  $('fPlus').textContent = !classe ? (monde.essai ? 'niveau d\'essai : hors classement' : auto ? 'pilote automatique : hors classement' : 'le classement ne bouge pas') : skin ? 'nouveau skin : ' + skin.nom : rAp !== rAvant ? 'nouveau rang : ' + rAp : rang(profil.elo).nom;
   $('hud').classList.remove('on'); $('fin').classList.add('on');
   // Les boutons ne répondent qu'après un instant : un doigt qui tapote encore au moment de la chute ne relance pas une partie par accident.
-  setTimeout(() => { if (phase === 'fin') $('fin').classList.add('pret'); }, 900);
+  setTimeout(() => { if (phase === 'fin') $('fin').classList.add('pret'); }, 700);
 }
 
 // ---------- Les commandes : un seul doigt ----------
 function hold(h) {
   if (phase !== 'course' || M.mort) return;
-  if (h && M.idle) { if (aide === 0) { aide = 1; dire('lâche dans l\'arc doré'); } else taire(); }
-  jeu.setHold(h);
+  if (h && M.idle) {
+    if (aide === 0) { aide = 1; dire('lâche dans l\'arc doré'); } else taire();
+    // Le premier geste engage le duel : la mise est notée tout de suite. Quitter ou recharger la page en cours de duel compte comme une défaite.
+    if (!parti) { parti = true; $('hLui').textContent = rival.nom + ' · ' + Math.round(G.dist) + ' m'; if (classe) { profil.enCours = { rival: rival.id, elo: rival.elo }; garder(); } }
+  }
+  // Un appui plus court qu'une image n'est pas perdu : le doigt reste « posé » jusqu'au prochain pas du mouvement.
+  if (h) { appuiFrais = true; aLever = false; jeu.setHold(true); } else if (appuiFrais) aLever = true; else jeu.setHold(false);
 }
 const ui = (e) => e.target.closest && e.target.closest('[data-ui]');
 // On compte les doigts posés : le singe ne lâche que lorsque le dernier se lève. Un second doigt ne provoque plus de lâcher involontaire.
@@ -113,14 +127,14 @@ addEventListener('pointercancel', (e) => { journal('doigt annulé par le systèm
 addEventListener('blur', () => { doigts.clear(); hold(false); });
 document.addEventListener('visibilitychange', () => journal(document.hidden ? 'page masquée' : 'page affichée'));
 addEventListener('contextmenu', (e) => e.preventDefault());
-addEventListener('keydown', (e) => { if (e.code !== 'Space' || e.repeat) return; e.preventDefault(); if (phase === 'accueil') lancer(false, 'clavier'); else if (phase === 'fin') { if ($('fin').classList.contains('pret')) lancer(true, 'clavier'); } else hold(true); });
+addEventListener('keydown', (e) => { if (e.code !== 'Space' || e.repeat) return; e.preventDefault(); if (phase === 'accueil') { if (time - accueilT > 0.5) lancer(false, 'clavier'); } else if (phase === 'fin') { if ($('fin').classList.contains('pret')) lancer(true, 'clavier'); } else hold(true); });
 addEventListener('keyup', (e) => { if (e.code === 'Space') hold(false); });
 const clic = (id, fn) => $(id).addEventListener('click', (e) => { e.stopPropagation(); fn(); });
 const pret = () => $('fin').classList.contains('pret');
-clic('bSuivant', () => { if (pret()) lancer(false, 'bouton rival suivant'); }); clic('bRevanche', () => { if (pret()) lancer(true, 'bouton revanche'); }); clic('bAccueil', () => { if (pret()) accueil(); });
+clic('bSuivant', () => { if (pret()) lancer(false, 'bouton duel suivant'); }); clic('bRevanche', () => { if (pret()) lancer(true, 'bouton rejouer'); }); clic('bAccueil', () => { if (pret()) accueil(); });
 clic('mPrec', () => changerMonde(-1)); clic('mSuiv', () => changerMonde(1));
 clic('bClassement', () => { ouvrirClassement(); }); clic('bSkins', () => { ouvrirSkins(); });
-clic('cFermer', () => $('classement').classList.remove('on')); clic('sFermer', () => { $('skins').classList.remove('on'); });
+clic('cFermer', () => { $('classement').classList.remove('on'); accueilT = time; }); clic('sFermer', () => { $('skins').classList.remove('on'); accueilT = time; });
 
 function ouvrirClassement() {
   const cl = classement();
@@ -130,12 +144,12 @@ function ouvrirClassement() {
 }
 function ouvrirSkins() {
   $('sListe').innerHTML = SKINS.map((s) => {
-    const ok = profil.elo >= s.seuil, choisi = profil.skin === s.id;
+    const ok = possede(s), choisi = profil.skin === s.id;
     return `<button class="skin ${ok ? '' : 'non'} ${choisi ? 'choisi' : ''}" data-skin="${s.id}"><i style="background:${s.ink};box-shadow:0 0 0 2px ${s.rim}${s.trail ? ', 0 0 18px rgba(' + s.trail + ',.8)' : ''}"></i><b>${s.nom}</b><span>${choisi ? 'porté' : ok ? 'choisir' : 'à ' + s.seuil}</span></button>`;
   }).join('');
   $('skins').classList.add('on');
 }
-$('sListe').addEventListener('click', (e) => { const b = e.target.closest('[data-skin]'); if (!b) return; const s = skinById(b.dataset.skin); if (profil.elo < s.seuil) return; profil.skin = s.id; garder(); ouvrirSkins(); });
+$('sListe').addEventListener('click', (e) => { const b = e.target.closest('[data-skin]'); if (!b) return; const s = skinById(b.dataset.skin); if (!possede(s)) return; profil.skin = s.id; garder(); ouvrirSkins(); });
 
 // ---------- Le singe : une silhouette articulée, posée par le mouvement ----------
 // phi : l'angle du corps qui pend sous les mains (0 = droit vers le bas, positif = vers l'avant). Il suit avec retard : c'est ce qui donne du poids.
@@ -279,12 +293,13 @@ function frame() {
     for (let i = 0; i < n && !M.mort; i++) {
       if (phase !== 'course' || auto) pilote(jeu, pil);            // hors course, le singe joue tout seul
       jeu.step(h);
+      if (appuiFrais) { appuiFrais = false; if (aLever) { aLever = false; jeu.setHold(false); } }
       if (phase === 'course' && !M.idle && !M.mort) t += h;
       if (window.LIANE.stop && window.LIANE.stop(M)) { window.LIANE.pause = true; break; }
     }
   }
   for (const e of jeu.events) {
-    if (e.type === 'saisie') { burst(e.x, e.y + 1.5, 2, -1); if (aide < 9) { if (M.saisies >= 3) { aide = 9; taire(); } else dire('lâche dans l\'arc doré'); } }
+    if (e.type === 'saisie') { burst(e.x, e.y + 1.5, 2, -1); if (aide < 9 && phase === 'course') { if (M.saisies >= 3) { aide = 9; taire(); } else dire('lâche dans l\'arc doré'); } }
     else if (e.type === 'lacher') { if (e.parfait) rings.push({ x: e.x, y: e.y, t: 0 }); if (aide < 9 && phase === 'course') dire('tiens pour attraper la liane'); }
     else if (e.type === 'rebond') { e.tr.ecrase = 1; burst(e.x, e.y + 0.4, 6, 5); B.squash = 1; }
     else if (e.type === 'mort') { if (e.cause === 'chute') burst(e.x, 0.5, 14, 6); taire(); }
@@ -292,12 +307,12 @@ function frame() {
   jeu.events.length = 0;
   const dt = paused ? 0 : real, skin = skinById(profil.skin);
   if (M.mort && !mortT) mortT = time;
-  if (mortT && phase === 'course' && time - mortT > 0.9) finir();
+  if (mortT && phase === 'course' && time - mortT > 0.7) finir();
   if (mortT && phase === 'accueil' && time - mortT > 1.2) scene((Math.random() * 1e9) | 0, false);
   if (phase === 'course') {
     const d = Math.max(0, Math.round(M.x)); if (d !== distVue) { distVue = d; $('chrono').textContent = d + ' m'; }
     majCrans(M.chaine);
-    if (!depasse && M.x > G.dist) { depasse = true; $('ecart').textContent = rival.nom + ' dépassé'; $('ecart').className = 'maj on avance'; ecartT = time; }
+    if (!depasse && Math.round(M.x) > Math.round(G.dist)) { depasse = true; $('ecart').textContent = rival.nom + ' dépassé'; $('ecart').className = 'maj on avance'; ecartT = time; }
     if (ecartT > 0 && time - ecartT > 2.4) { $('ecart').className = 'maj'; ecartT = -9; }
     const dn = M.x - jeu.nuit.x, txt = !M.idle && dn < 22 ? 'la nuit · ' + Math.max(0, Math.round(dn)) + ' m' : '';
     if (txt !== nuitVue) { nuitVue = txt; if (txt) $('nuit').textContent = txt; $('nuit').classList.toggle('on', !!txt); }
@@ -305,7 +320,7 @@ function frame() {
   if (auto) { if (phase === 'accueil' && time > 2) lancer(false); else if (phase === 'fin' && !window.LIANE.attente) { window.LIANE.attente = setTimeout(() => { window.LIANE.attente = 0; if (phase === 'fin') lancer(false); }, 2500); } }
   // Si l'appareil peine, on baisse la finesse de l'image plutôt que la fluidité. Jamais pendant une course.
   if (brut < 0.25) fluide += (brut - fluide) * 0.05;
-  if (phase !== 'course' && !params.get('net') && time - mesureT > 3 && fluide > 0.022 && dpr > 1) { qualite = Math.max(0.75, qualite - 0.25); mesureT = time; fluide = 0.016; resize(); }
+  if (phase !== 'course' && !params.get('net') && time - mesureT > 3 && fluide > 0.022 && dpr > 1 && qualite > 0.75) { qualite = Math.max(0.75, qualite - 0.25); mesureT = time; fluide = 0.016; resize(); }
 
   // La caméra devance le singe d'autant plus qu'il va vite, et suit à peine sa hauteur. À l'accueil, elle le décale à droite du titre.
   vue += ((phase === 'accueil' && !portrait ? 0.66 : ancre) - vue) * Math.min(1, real * 3);
@@ -338,7 +353,7 @@ function frame() {
   }
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
   // Le repère du rival : un faisceau à l'endroit où il s'est arrêté. Le dépasser, c'est gagner.
-  if (phase !== 'accueil' && G && faisceau(G.dist, 0.34, 1.1)) {
+  if (phase !== 'accueil' && G && (parti || phase === 'fin') && faisceau(G.dist, 0.34, 1.1)) {
     ctx.globalAlpha = 0.85; ctx.fillStyle = '#fff6dc'; ctx.font = `300 ${Math.round(11 * dpr)}px Jost, sans-serif`; ctx.textAlign = 'center';
     ctx.fillText(rival.nom.toUpperCase() + '  ·  ' + Math.round(G.dist) + ' M', X(G.dist), H * 0.3); ctx.globalAlpha = 1;
   }
@@ -421,9 +436,14 @@ addEventListener('resize', resize); resize();
 $('version').textContent = VERSION;
 window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get image() { return { dpr, qualite, fluide }; }, profil, CFG, lancer, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
 journal('page ouverte');
+// Un duel classé était engagé quand la page a été quittée ou rechargée : il compte comme une défaite.
+let abandon = 0;
+if (profil.enCours && Number.isFinite(profil.enCours.elo)) { abandon = gain(profil, profil.enCours.elo, false); profil.elo = Math.max(100, profil.elo + abandon); profil.d++; journal('duel quitté en cours : défaite comptée (' + abandon + ')'); }
+profil.enCours = null; garder();
 if (params.get('journal')) { let j = []; try { j = JSON.parse(localStorage.getItem('liane-journal') || '[]'); } catch (e) { /* rien */ }
   const pre = document.createElement('pre'); pre.setAttribute('data-ui', ''); pre.style.cssText = 'position:fixed;inset:0;margin:0;padding:12px;overflow:auto;background:rgba(2,12,16,.94);color:#fff6dc;font:12px/1.5 monospace;z-index:9;touch-action:pan-y;-webkit-user-select:text;user-select:text';
   pre.textContent = 'Journal de LIANE ' + VERSION + ' (les plus récents en bas)\n\n' + j.map(([t, q]) => new Date(t).toLocaleTimeString('fr-FR') + '  ' + q).join('\n'); document.body.appendChild(pre); }
 accueil();
+if (abandon) { dire('duel quitté en cours : −' + Math.abs(abandon) + ' au classement'); setTimeout(() => { if (phase === 'accueil') taire(); }, 5000); }
 $('chargement').classList.add('vu');
 frame();

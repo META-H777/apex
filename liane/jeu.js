@@ -100,7 +100,7 @@ export function pas(m, lianas, dt, ev) {
     if (m.om > 0) {
       const Et = cible(m.R, m.chaine);
       if (E < Et) { if (m.th < 1) m.om += C.pump / m.R * dt; }          // il se tracte vers l'avant, jusqu'à retrouver sa vitesse
-      else if (E > Et + 4) { const v2 = Math.max(1, v * v - 2 * C.fuite * (E - Et) * dt); m.om = Math.sqrt(v2) / m.R; }
+      else if (E > Et + 4) { const v2 = Math.max(0, v * v - 2 * C.fuite * (E - Et) * dt); m.om = Math.sqrt(v2) / m.R; }
       if (m.th > C.bout) m.om -= m.om * Math.min(1, 30 * dt);            // au bout du balancement, il ne monte plus
     } else {
       m.om -= m.om * 0.7 * dt;                                           // en arrière, il s'essouffle
@@ -243,7 +243,9 @@ export class Jeu {
       const rest = 0.03 * Math.sin(this.time * 0.9 + li.ph);
       li.av += ((rest - li.a) * 9 - li.av * 1.3) * dt; li.a += li.av * dt;
     }
-    while (this.dernier.x < M.x + 90) this.addLiana();
+    // La forêt pousse devant le singe. Ce calcul est lourd : on le fait de préférence en vol, juste après un lâcher, jamais au moment de viser.
+    if (M.mode === 'fly' && this.dernier.x < M.x + 128) this.addLiana();     // une liane d'avance par pas, pendant le vol
+    while (this.dernier.x < M.x + 92) this.addLiana();
     while (this.lianas.length > 2 && this.lianas[0].x < M.x - 45 && this.lianas[0] !== M.li) this.lianas.shift();
   }
 }

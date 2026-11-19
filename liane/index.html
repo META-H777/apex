@@ -67,7 +67,7 @@
   #fElo { font-size:min(4.4vw, 7vh, 28px); margin-top:1vh; }
   #fin .boutons { display:flex; gap:6vw; margin-top:3.5vh; align-items:center; pointer-events:none; opacity:.3; transition:opacity .3s; }
   #fin.pret .boutons { pointer-events:auto; opacity:1; }
-  #bSuivant { font-size:min(2.8vw, 4vh, 15px); padding:1.8vh 5vw; border:1px solid rgba(255,246,220,.7); border-radius:999px; }
+  #bSuivant, #bRevanche { font-size:min(2.8vw, 4vh, 15px); padding:1.8vh 5vw; border:1px solid rgba(255,246,220,.7); border-radius:999px; }
 
   /* Le classement et les skins. */
   .panneau { background:rgba(3,22,26,.9); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); display:flex; flex-direction:column; align-items:center; padding:calc(var(--st) + 4vh) 6vw calc(var(--sb) + 3vh); box-sizing:border-box; }
@@ -119,7 +119,7 @@
   <div class="maj" id="fCause"></div>
   <div id="fElo"></div>
   <div class="maj" id="fPlus"></div>
-  <div class="boutons"><button class="lien maj" id="bRevanche">revanche</button><button class="maj" id="bSuivant">rival suivant</button><button class="lien maj" id="bAccueil">accueil</button></div>
+  <div class="boutons"><button class="maj" id="bRevanche">rejouer</button><button class="maj" id="bSuivant">duel suivant</button><button class="lien maj" id="bAccueil">accueil</button></div>
 </div>
 
 <div id="classement" class="ecran panneau" data-ui>
@@ -140,6 +140,6 @@
 <div id="note" class="txt maj ombre vu"></div>
 <div id="version"></div>
 <div id="chargement" class="maj">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=4"></script>
+<script type="module" src="main.js?v=5"></script>
 </body>
 </html>
