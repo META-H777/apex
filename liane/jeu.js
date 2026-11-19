@@ -1,152 +1,123 @@
-// LIANE — les règles du jeu, sans aucun affichage : lianes, balancement, vol, rattrapage, pièges, fruits, difficulté.
-// Ce fichier ne dépend de rien : il peut tourner seul pour vérifier qu'une partie reste toujours jouable.
+// LIANE — le jouet : les règles du mouvement, sans aucun dessin.
+// Vue de côté, l'axe x va vers la droite, l'axe y vers le haut, en mètres.
+// Tenir = s'accrocher à la liane à portée ; lâcher = s'élancer. La vitesse ne retombe jamais à zéro.
 
-export const G = 13;                 // pesanteur (un peu adoucie, pour de beaux arcs)
-export const AY = 11;                // hauteur d'accroche des lianes, dans la canopée
-export const SWING = 0.82;           // amplitude entretenue du balancement, en radians
-export const GRIP = 6.4;             // hauteur de prise que le singe retrouve sur la liane
-export const LANES = [1.5, 0, -1.5]; // trois couloirs : gauche, centre, droite à l'écran (la caméra regarde vers +Z)
-export const ROT_TIME = 1.15;        // secondes avant qu'une liane pourrie ne cède
+export const CFG = {
+  g: 30,            // pesanteur : forte, pour des arcs nerveux
+  floorY: 0,        // la cime des arbres du dessous : on y rebondit, on n'y meurt pas (c'est un jouet)
+  vRef: 18.8,       // vitesse de croisière au creux du balancement, vers laquelle le singe se relance
+  yRef: 4.6,        // hauteur de ce creux
+  pump: 7.6,        // élan que le singe ajoute en se balançant vers l'avant
+  drag: 0.006,      // frein de l'air en vol
+  ahead: 2.6,       // portée pour saisir une liane devant soi
+  back: 1.0,        // et un peu derrière
+  vMin: 9,          // vitesse horizontale plancher en vol
+  bounce: 13.6,     // rebond sur les cimes
+  ceil: 9.4,        // au-dessus, le feuillage freine la montée
+  depth: 5.4,       // on saisit une liane assez bas sous son accroche : c'est ce qui fait de grands arcs
+  autoTh: 1.12,     // angle où il lâche tout seul si on tient trop longtemps
+  autoV: 5.5,       // ou vitesse en dessous de laquelle il lâche tout seul
+};
 
 export function rnd(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-// La difficulté ne dépend que du nombre de lianes déjà passées : elle monte vite au début, puis de plus en plus lentement, sans jamais s'arrêter.
-export function difficulty(n) {
-  const k = (t) => 1 - Math.exp(-n / t);
-  return {
-    gap: 6.2 + 2.0 * k(45),                                        // écart entre deux lianes
-    jitter: 0.7,                                                   // part de hasard dans l'écart
-    len: 12 - 2.4 * k(60),                                           // longueur des lianes : plus courtes, il faut arriver plus haut
-    reach: 1.75 - 0.4 * k(70),                                     // tolérance au rattrapage
-    shift: n < 6 ? 0 : Math.min(0.6, 0.2 + (n - 6) * 0.008),       // la liane suivante change de couloir
-    double: n < 12 ? 0 : Math.min(0.45, 0.14 + (n - 12) * 0.006),  // deux lianes côte à côte, dont une pourrie
-    rotten: n < 22 ? 0 : Math.min(0.28, 0.08 + (n - 22) * 0.004),  // liane pourrie seule : il faut repartir aussitôt
-    fruit: 0.55,
-  };
-}
-
 export class Jeu {
-  constructor({ seed = 1, z0 = 0, n0 = 0, onLiana = () => {}, onFruit = () => {} } = {}) {   // n0 : rang de départ de la difficulté (pour les essais)
-    this.r = rnd(seed); this.onLiana = onLiana; this.onFruit = onFruit;
-    this.lianas = []; this.fruits = []; this.n = n0; this.made = 0; this.nextZ = z0; this.path = 1; this.prev = null; this.lastRotten = false; this.id = 0;
-    this.addRow(); while (this.nextZ < z0 + 80) this.addRow();
-    const li = this.lianas[0];
-    this.S = { mode: 'hang', li, R: GRIP, th: -SWING, om: 0, pos: { x: li.x, y: AY - GRIP * Math.cos(SWING), z: li.z - GRIP * Math.sin(SWING) }, vel: { x: 0, y: 0, z: 0 },
-      origin: li.lane, aim: li.lane, lastZ: -1e9, z0: li.z, dist: 0, fruits: 0, count: 0, started: false, over: false, cause: '', passes: 0, wasUp: false };
-    li.held = true;
+  constructor(seed = 1) {
+    this.r = rnd(seed); this.lianas = []; this.nextX = 0; this.id = 0; this.time = 0; this.events = [];
+    while (this.nextX < 90) this.addLiana();
+    const li = this.lianas[0], R = Math.min(7, li.L - 1.2);
+    this.M = { mode: 'swing', li, R, th: -0.55, om: 0, x: 0, y: 0, vx: 0, vy: 0, hold: false, idle: true, want: false, air: 0, swings: 0, bounces: 0, last: null };
+    li.held = true; this.place();
   }
 
-  // Une rangée : une liane, ou deux côte à côte dont une pourrie. Le chemin sûr ne s'écarte jamais de plus d'un couloir.
-  addRow() {
-    const r = this.r, d = difficulty(this.n), z = this.nextZ;
-    if (this.made > 0 && r() < d.shift) this.path = clamp(this.path + (r() < 0.5 ? -1 : 1), 0, 2);
-    const mk = (lane, rotten) => {
-      const li = { id: this.id++, row: this.n, lane, x: LANES[lane], z, len: d.len, reach: d.reach, rotten, ang: 0, angV: 0, ph: r() * 6.28, held: false, hold: 0, drop: 0, broken: false, seed: (r() * 1e9) | 0 };
-      this.lianas.push(li); this.onLiana(li); return li;
-    };
-    let good;
-    const soloRotten = this.made > 0 && !this.lastRotten && r() < d.rotten;
-    if (soloRotten) { good = mk(this.path, true); this.lastRotten = true; }
-    else {
-      good = mk(this.path, false); this.lastRotten = false;
-      if (r() < d.double) { const side = this.path === 0 ? 1 : this.path === 2 ? 1 : (r() < 0.5 ? 0 : 2); mk(side === this.path ? this.path - 1 : side, true); }
-    }
-    if (this.prev && r() < d.fruit) {          // un fruit sur la trajectoire, entre la liane précédente et celle-ci
-      // Il est placé sur le bel arc, celui d'un lâcher tardif : un lâcher précipité passe en dessous.
-      const f = { id: this.id++, x: this.prev.x * 0.15 + good.x * 0.85, y: AY - 5.05 - r() * 0.3, z: this.prev.z + (z - this.prev.z) * (0.62 + r() * 0.07), taken: false, seed: (r() * 1e9) | 0 };
-      this.fruits.push(f); this.onFruit(f);
-    }
-    this.prev = good; this.n++; this.made++; this.nextZ = z + d.gap + r() * d.jitter;
+  // Une liane : un point d'accroche dans la canopée, une longueur, et un angle de balancement quand elle est libre.
+  addLiana() {
+    const r = this.r, y = 12.4 + r() * 1.8, L = y - (3.4 + r() * 1.4);     // de longues lianes, qui s'arrêtent au-dessus des cimes
+    this.lianas.push({ id: this.id++, x: this.nextX, y, L, a: 0, av: 0, ph: r() * 6.28, held: false, cool: 0, seed: (r() * 1e9) | 0 });
+    this.nextX += 7.2 + r() * 3.4;
   }
 
-  // Le joueur lâche la liane.
+  place() { const M = this.M, li = M.li; M.x = li.x + M.R * Math.sin(M.th); M.y = li.y - M.R * Math.cos(M.th); M.vx = M.R * M.om * Math.cos(M.th); M.vy = M.R * M.om * Math.sin(M.th); }
+  energy() { const M = this.M; return 0.5 * (M.vx * M.vx + M.vy * M.vy) + CFG.g * (M.y - CFG.yRef); }
+
+  setHold(h) {
+    const M = this.M; if (h === M.hold) return; M.hold = h;
+    if (!h && M.mode === 'swing') M.want = true;       // lâcher la liane
+  }
+
   release() {
-    const S = this.S; if (S.mode !== 'hang' || S.over) return false;
-    const li = S.li; li.held = false; S.lastZ = li.z; S.started = true;
-    S.vel.x = 0; S.vel.y = S.R * S.om * Math.sin(S.th); S.vel.z = S.R * S.om * Math.cos(S.th); S.mode = 'fly';
-    return true;
-  }
-  // Le joueur vise : -1 vers la gauche de l'écran, +1 vers la droite. Un couloir au plus par élan.
-  steer(dir) { const S = this.S; S.aim = clamp(S.aim + dir, Math.max(0, S.origin - 1), Math.min(2, S.origin + 1)); }
-
-  // La liane que les mains peuvent saisir à cette position, s'il y en a une.
-  _grab(pos, lastZ, m = 0) {             // m : marge de prudence, pour le pilote automatique
-    for (const l of this.lianas) {
-      if (l.broken || l.z <= lastZ + 1) continue;
-      const dz = pos.z - l.z, dy = AY - pos.y;
-      if (Math.abs(dz) < l.reach - m && Math.abs(pos.x - l.x) < 0.6 - m * 0.5 && dy > 3.2 + m && dy < l.len - 0.3 - m) return l;
-    }
-    return null;
-  }
-  // Pilote automatique (pour les essais) : où mènerait un lâcher maintenant, en visant ce couloir ?
-  _sim(aim) {
-    const S = this.S, p = { x: S.pos.x, y: S.pos.y, z: S.pos.z }, v = { y: S.R * S.om * Math.sin(S.th), z: S.R * S.om * Math.cos(S.th) }, dt = 0.0125;
-    for (let t = 0; t < 2.2; t += dt) {
-      v.y -= G * dt; p.y += v.y * dt; p.z += v.z * dt; p.x += (LANES[aim] - p.x) * Math.min(1, dt * 6);
-      const l = this._grab(p, S.li.z, 0.4); if (l) return l;
-      if (p.y < AY - 13) return null;
-    }
-    return null;
-  }
-  autopilot() {
-    const S = this.S; if (S.mode !== 'hang') return;
-    if (S.om <= 0) { if (S.wasUp) { S.wasUp = false; S.passes++; } return; }
-    S.wasUp = true;
-    // Il attend le haut du balancement pour un bel arc, sauf si la liane est pourrie ou s'il a déjà laissé passer un élan.
-    if (S.th < 0.42 && !S.li.rotten && S.passes < 1) return;
-    let best = null, bestAim = S.origin;
-    for (const a of [S.origin, S.origin - 1, S.origin + 1]) {
-      if (a < 0 || a > 2) continue;
-      const l = this._sim(a); if (l && (!best || (best.rotten && !l.rotten))) { best = l; bestAim = a; }
-    }
-    if (!best) return;
-    // Il préfère une liane saine ; il n'accepte une pourrie que s'il n'y a pas le choix dans la rangée suivante.
-    if (best.rotten && this.lianas.some((l) => l.row === best.row && !l.rotten)) return;
-    S.aim = bestAim; this.release();
+    const M = this.M, li = M.li; this.place();
+    li.held = false; li.cool = 0.45; li.a = M.th; li.av = M.om * 0.35;
+    M.mode = 'fly'; M.idle = false; M.want = false; M.air = 0; M.last = li;
+    this.events.push({ type: 'release', x: M.x, y: M.y, v: Math.hypot(M.vx, M.vy) });
   }
 
-  step(dt, auto = false) {
-    const S = this.S;
-    if (S.mode === 'hang') {
-      const li = S.li;
-      S.om += -(G / S.R) * Math.sin(S.th) * dt; S.th += S.om * dt;
-      // Le singe entretient son élan, comme sur une balançoire ; un élan trop fort s'amortit.
-      const E = 0.5 * S.R * S.R * S.om * S.om + G * S.R * (1 - Math.cos(S.th)), Emin = G * S.R * (1 - Math.cos(SWING));
-      if (E < Emin) S.om += Math.sign(S.om || 1) * 1.1 * dt; else if (E > Emin * 1.25) S.om *= 1 - 0.9 * dt;
-      // Il reprend sa prise à bonne hauteur.
-      const want = Math.min(GRIP, li.len - 0.6); S.R += clamp(want - S.R, -1.3 * dt, 1.3 * dt);
-      if (li.rotten) {                                        // la liane pourrie craque, s'affaisse, puis cède
-        li.hold += dt; li.drop = li.hold > 0.78 ? 0.3 : li.hold > 0.42 ? 0.14 : 0;
-        if (li.hold > ROT_TIME) { li.broken = true; this.release(); S.vel.y = Math.min(S.vel.y, 0); S.vel.z *= 0.45; S.cause = 'pourrie'; return; }
-      }
-      S.pos.x += (li.x - S.pos.x) * Math.min(1, dt * 12);
-      S.pos.y = AY - li.drop - S.R * Math.cos(S.th); S.pos.z = li.z + S.R * Math.sin(S.th);
-      li.ang = S.th; li.angV = S.om;
-      if (auto) this.autopilot();
-    } else if (S.mode === 'fly') {
-      S.vel.y -= G * dt; S.pos.y += S.vel.y * dt; S.pos.z += S.vel.z * dt;
-      S.pos.x += (LANES[S.aim] - S.pos.x) * Math.min(1, dt * 6);
-      const l = this._grab(S.pos, S.lastZ);
-      if (l) {                                                 // à portée : il l'attrape
-        const dz = S.pos.z - l.z, dy = AY - S.pos.y;
-        S.li = l; l.held = true; S.origin = S.aim = l.lane; S.R = clamp(Math.hypot(dz, dy), 3.4, l.len - 0.3); S.th = Math.atan2(dz, dy);
-        S.om = (S.vel.z * Math.cos(S.th) + S.vel.y * Math.sin(S.th)) / S.R; S.mode = 'hang'; S.count++; S.cause = ''; S.passes = 0; S.wasUp = false;
-      }
-      for (const f of this.fruits) if (!f.taken && Math.hypot(f.x - S.pos.x, f.y - S.pos.y, f.z - S.pos.z) < 1.1) { f.taken = true; S.fruits++; }
-      if (S.pos.y < AY - 15) { S.mode = 'fallen'; S.over = true; }
+  // La liane que les mains peuvent saisir : celle dont la corde passe le plus près, devant de préférence.
+  reachable() {
+    const M = this.M, sp = Math.hypot(M.vx, M.vy), ahead = CFG.ahead * clamp(sp / 12, 0.75, 1.25);
+    let best = null, bestD = 1e9;
+    for (const li of this.lianas) {
+      if (li.cool > 0 || li.x < M.x - 8) continue; if (li.x > M.x + 12) break;
+      if (M.y > li.y - CFG.depth || M.y < li.y - li.L - 0.6) continue;   // trop haut sous l'accroche, ou sous le bout de la liane
+      const d = li.x + (li.y - M.y) * Math.tan(li.a) - M.x;              // écart horizontal avec la corde, à la hauteur des mains
+      if (d < -CFG.back || d > ahead) continue;
+      if (Math.abs(d) < bestD) { bestD = Math.abs(d); best = li; }
+    }
+    return best;
+  }
+
+  grab(li) {
+    const M = this.M, sp = Math.hypot(M.vx, M.vy);
+    M.th = Math.atan2(M.x - li.x, li.y - M.y); M.R = clamp(Math.hypot(M.x - li.x, li.y - M.y), 2.5, li.L + 0.6);
+    const vt = M.vx * Math.cos(M.th) + M.vy * Math.sin(M.th);
+    M.om = Math.max(vt, 0.84 * sp, 5) / M.R;            // la vitesse se garde : elle passe dans le balancement
+    M.li = li; li.held = true; M.mode = 'swing'; M.want = false; M.swings++;
+    this.place(); this.events.push({ type: 'grab', x: M.x, y: M.y });
+  }
+
+  step(dt) {
+    const M = this.M, C = CFG; this.time += dt;
+    if (M.mode === 'swing') {
+      M.om += -(C.g / M.R) * Math.sin(M.th) * dt;
+      const E = this.energy(), Eref = 0.5 * C.vRef * C.vRef;
+      if (M.idle) {                                      // avant le premier geste : il se balance sur place
+        const Eidle = C.g * M.R * (1 - Math.cos(0.6)) + C.g * (M.li.y - M.R - C.yRef);
+        if (E < Eidle) M.om += Math.sign(M.om || 1) * 2.6 / M.R * dt;
+      } else if (M.om > 0 && E < Eref) M.om += C.pump / M.R * dt;        // il se relance vers l'avant
+      else if (E > Eref * 1.12) M.om *= 1 - 0.5 * dt;
+      M.th += M.om * dt; this.place(); M.li.a = M.th; M.li.av = M.om;
+      const v = M.R * M.om;
+      if (M.want && (M.om > 0 || !M.idle)) { if (M.om > 0.15 || M.th > 0.1) this.release(); }
+      else if (!M.idle && (M.th > C.autoTh || (M.th > 0.25 && v < C.autoV))) this.release();   // il ne reste jamais pendu : pas de retour en arrière
     } else {
-      S.vel.y -= G * dt; if (S.pos.y > AY - 60) { S.pos.y += S.vel.y * dt; S.pos.z += S.vel.z * dt * 0.5; }
+      M.air += dt;
+      M.vy -= C.g * dt;
+      const sp = Math.hypot(M.vx, M.vy), k = 1 - C.drag * sp * dt; M.vx *= k; M.vy *= k;
+      if (M.vx < C.vMin) M.vx += (C.vMin - M.vx) * Math.min(1, 3 * dt);
+      if (M.y > C.ceil && M.vy > 0) M.vy -= M.vy * Math.min(1, 9 * dt);
+      M.x += M.vx * dt; M.y += M.vy * dt;
+      if (M.y < C.floorY + 1.1 && M.vy < 0) {            // la cime des arbres le renvoie en l'air
+        this.events.push({ type: 'bounce', x: M.x, y: C.floorY + 0.4, v: -M.vy });
+        M.vy = Math.max(C.bounce, -M.vy * 0.62); M.vx = Math.max(C.vMin + 1.5, M.vx * 0.86); M.y = C.floorY + 1.1; M.bounces++;
+      }
+      if (M.hold) { const li = this.reachable(); if (li) this.grab(li); }
     }
-    if (S.started) S.dist = Math.max(S.dist, S.pos.z - S.z0);
-    while (this.nextZ < S.pos.z + 80) this.addRow();
+    for (const li of this.lianas) {                      // les lianes libres : un souffle de vent, et le retour après un lâcher
+      if (li.cool > 0) li.cool -= dt;
+      if (li.held) continue;
+      const rest = 0.035 * Math.sin(this.time * 0.9 + li.ph);
+      li.av += ((rest - li.a) * 9 - li.av * 1.3) * dt; li.a += li.av * dt;
+    }
+    while (this.nextX < M.x + 90) this.addLiana();
+    while (this.lianas.length > 2 && this.lianas[0].x < M.x - 45 && this.lianas[0] !== M.li) this.lianas.shift();
   }
 
-  // Oublie ce qui est loin derrière. Renvoie ce qui a été retiré, pour que l'affichage le retire aussi.
-  prune() {
-    const S = this.S, out = [];
-    while (this.lianas.length && this.lianas[0].z < S.pos.z - 22 && this.lianas[0] !== S.li) out.push(this.lianas.shift());
-    while (this.fruits.length && this.fruits[0].z < S.pos.z - 22) out.push(this.fruits.shift());
-    return out;
+  // Pilote automatique, pour les essais : il s'accroche quand la liane est proche et lâche en haut du balancement.
+  autopilot(style = 'bon', relTh = 0.62) {
+    const M = this.M;
+    if (style === 'colle') { this.setHold(true); return; }                 // le doigt posé en permanence
+    if (M.mode === 'swing') { if (M.idle) { if (M.om > 0 && M.th > 0.3) { this.setHold(true); this.setHold(false); } } else if (M.th > relTh || (M.th > 0.4 && M.R * M.om < 8)) this.setHold(false); }
+    else if (M.air > 0.09 && M.vy < 4) this.setHold(true);
   }
 }
