@@ -1,20 +1,17 @@
-// LIANE — test d'intégration (voie A) : le monde est un film, le singe et ses lianes sont calculés en direct par-dessus.
-// Le singe se balance de liane en liane, vu de dos. Toucher = lâcher et s'élancer ; il attrape la liane suivante si elle est à portée.
+// LIANE — la partie : le monde est un film, le singe, ses lianes, les pièges et les fruits sont calculés en direct par-dessus.
+// Toucher = lâcher la liane ; glisser = viser le couloir de gauche ou de droite. Les règles sont dans jeu.js, ici il n'y a que l'affichage.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Beast } from '../betes.js?v=5';
+import { Jeu, G, AY, LANES } from './jeu.js?v=6';
 
-const VERSION = 'test 5 · lianes';
+const VERSION = 'test 6 · la partie';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = THREE.MathUtils.clamp;
 
 // ---------- Réglages ----------
 const HAZE = new THREE.Color('#8e7d45');     // brume dorée relevée dans le film, au point de fuite
-const G = 13;                                // pesanteur (un peu adoucie, pour de beaux arcs)
-const AY = 11;                               // hauteur d'accroche des lianes (hors champ, dans la canopée)
-const REACH = 1.75;                          // portée des bras au rattrapage
-const SWING = 0.82;                          // amplitude entretenue du balancement, en radians
 const SINGE = { fSwing: 0.82, fKnee: 1.0, hSwing: 0.86, hKnee: 1.1, hindLag: 0.46, lr: 0.08, spine: 0.15, bob: 0.05, pitch: 0.06, tail: 0.14, crouch: 0.85 };
 
 // ---------- Le film, en boucle fondue ----------
@@ -76,7 +73,8 @@ function haze(mat, near, far) {
     sh.fragmentShader = 'uniform vec3 uHaze; uniform float uNear; uniform float uFar; varying float vDepthA;\n' + sh.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
       float hz = smoothstep(uNear, uFar, vDepthA);
       gl_FragColor.rgb = mix(gl_FragColor.rgb, uHaze, hz * 0.85);
-      gl_FragColor.a *= 1.0 - smoothstep(uFar * 0.72, uFar, vDepthA);`);
+      gl_FragColor.a *= 1.0 - smoothstep(uFar * 0.72, uFar, vDepthA);
+      gl_FragColor.a *= smoothstep(1.6, 4.6, vDepthA);`);   // ce qui frôle l'objectif s'efface au lieu de boucher l'écran
   };
   return mat;
 }
@@ -88,9 +86,23 @@ const ropeMat = haze(new THREE.MeshStandardMaterial({ map: tMoss, normalMap: mos
 const leafMat = haze(new THREE.MeshStandardMaterial({ map: tLeaf, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.6, color: '#9aa57a', emissive: new THREE.Color('#1c2e0a'), emissiveIntensity: 0.35 }), 14, 60);
 const nearLeafMat = new THREE.MeshBasicMaterial({ map: blurred(tLeaf, 7), transparent: true, depthWrite: false, side: THREE.DoubleSide, color: new THREE.Color(0.2, 0.26, 0.12), opacity: 0.92 });
 
+// Matière sèche pour la liane pourrie : la même fibre, sans sa mousse, grise et cassante.
+function dryFrom(t) {
+  const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d'); g.drawImage(t.image, 0, 0, 512, 512);
+  const im = g.getImageData(0, 0, 512, 512), d = im.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const l = Math.pow((d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11) / 255, 0.8);
+    d[i] = 52 + l * 150; d[i + 1] = 40 + l * 124; d[i + 2] = 30 + l * 92;
+  }
+  g.putImageData(im, 0, 0);
+  const dt = new THREE.CanvasTexture(c); dt.colorSpace = THREE.SRGBColorSpace; dt.wrapS = dt.wrapT = THREE.RepeatWrapping; dt.anisotropy = 8; return dt;
+}
+const dryMat = haze(new THREE.MeshStandardMaterial({ map: dryFrom(tMoss), normalMap: mossN, normalScale: new THREE.Vector2(2.2, 2.2), roughness: 1, metalness: 0, color: '#f1e4cb', emissive: new THREE.Color('#3a2c1c'), emissiveIntensity: 0.6 }), 14, 60);
+const fruitMat = haze(new THREE.MeshStandardMaterial({ color: '#c9661a', roughness: 0.5, metalness: 0, emissive: new THREE.Color('#4a1c04'), emissiveIntensity: 0.3 }), 14, 60);
+const stemMat = haze(new THREE.MeshStandardMaterial({ color: '#4a3b22', roughness: 1 }), 14, 60);
+
 // ---------- Les lianes ----------
 // Une vraie corde végétale torsadée, accrochée dans la canopée. Elle pivote autour de son point d'accroche.
-function rnd(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const LEN = 16, quad = new THREE.PlaneGeometry(1, 1);
 const ropeGeo = (() => {
   const g = new THREE.CylinderGeometry(0.05, 0.07, LEN, 7, 48, true).translate(0, -LEN / 2, 0), p = g.attributes.position, uv = g.attributes.uv;
@@ -101,21 +113,39 @@ const ropeGeo = (() => {
   }
   g.computeVertexNormals(); return g;
 })();
-const lianas = []; let liSeed = 1, nextZ = 0;
-function addLiana() {
-  const r = rnd(liSeed++), g = new THREE.Group();
-  const x = lianas.length ? clamp(lianas[lianas.length - 1].x + (r() - 0.5) * 1.6, -1.4, 1.4) : 0;
-  g.position.set(x, AY, nextZ); g.add(new THREE.Mesh(ropeGeo, ropeMat));
-  for (let i = 0; i < 6; i++) {            // quelques feuilles le long de la liane
+const strandGeo = new THREE.CylinderGeometry(0.004, 0.011, 0.55, 4, 1).translate(0, -0.275, 0);
+const stemGeo = new THREE.CylinderGeometry(0.012, 0.009, 5.4, 5, 1).translate(0, 2.7, 0);
+const fruitGeo = new THREE.SphereGeometry(1, 14, 10);
+const rnd = (seed) => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+
+function buildLiana(li) {
+  const r = rnd(li.seed), g = new THREE.Group(), L = li.len + 0.5;
+  g.position.set(li.x, AY, li.z);
+  const rope = new THREE.Mesh(ropeGeo, li.rotten ? dryMat : ropeMat); rope.scale.y = L / LEN; g.add(rope);
+  if (!li.rotten) for (let i = 0; i < 6; i++) {            // quelques feuilles le long de la liane
     const s = 0.28 + r() * 0.32, leaf = new THREE.Mesh(quad, leafMat);
-    leaf.scale.set(s, s, 1); leaf.position.set((r() - 0.5) * 0.22, -1.5 - r() * (LEN - 3), (r() - 0.5) * 0.22); leaf.rotation.set(r() * 0.6, r() * 6.28, r() * 6.28); g.add(leaf);
+    leaf.scale.set(s, s, 1); leaf.position.set((r() - 0.5) * 0.22, -1.5 - r() * (L - 2.5), (r() - 0.5) * 0.22); leaf.rotation.set(r() * 0.6, r() * 6.28, r() * 6.28); g.add(leaf);
   }
-  scene.add(g);
-  const li = { g, x, z: nextZ, ang: 0, angV: 0, ph: r() * 6.28, held: false };
-  lianas.push(li); nextZ += 6.1 + r() * 1.5;
-  return li;
+  else {                                                   // la liane pourrie : nue, plus mince, des fibres qui se détachent
+    rope.scale.x = rope.scale.z = 0.78; g.rotation.z = (r() - 0.5) * 0.07;
+    for (let i = 0; i < 9; i++) {
+      const s = new THREE.Mesh(strandGeo, dryMat), a = r() * 6.28, tilt = 0.5 + r() * 0.9;
+      s.position.set(0, -3 - r() * (L - 3.5), 0); s.rotation.set(Math.cos(a) * tilt, 0, Math.sin(a) * tilt); s.scale.setScalar(0.7 + r() * 0.9); g.add(s);
+    }
+  }
+  scene.add(g); li.g = g; li.fallY = 0; li.fallV = 0;
 }
-while (nextZ < 80) addLiana();
+function buildFruit(f) {
+  const r = rnd(f.seed), g = new THREE.Group(); g.position.set(f.x, f.y, f.z);
+  g.add(new THREE.Mesh(stemGeo, stemMat));                 // la tige qui le porte, accrochée plus haut
+  const bunch = new THREE.Group();
+  for (let i = 0; i < 4; i++) {
+    const m = new THREE.Mesh(fruitGeo, fruitMat), s = 0.07 + r() * 0.025, a = i * 1.7 + r();
+    m.scale.set(s, s * 1.12, s); m.position.set(Math.cos(a) * 0.09 * (i ? 1 : 0), -0.05 - i * 0.07, Math.sin(a) * 0.09 * (i ? 1 : 0)); bunch.add(m);
+  }
+  const leaf = new THREE.Mesh(quad, leafMat); leaf.scale.setScalar(0.3); leaf.position.set(0.1, 0.12, 0); leaf.rotation.set(0.4, r() * 6.28, 0.6); bunch.add(leaf);
+  g.add(bunch); scene.add(g); f.g = g; f.bunch = bunch; f.k = 1;
+}
 
 // Feuilles floues qui passent tout près de l'objectif, sur les bords.
 const nears = [];
@@ -133,106 +163,113 @@ const fur = (m) => {
 };
 const monkey = new Beast(gMonkey, { length: +(params.get('taille') || 1.9), material: fur, gait: SINGE });
 scene.add(monkey.root);
-const hA = new THREE.Vector3(), hB = new THREE.Vector3(), hands = new THREE.Vector3();
+const hA = new THREE.Vector3(), hB = new THREE.Vector3(), hands = new THREE.Vector3(), grip = new THREE.Vector3();
 // Place le singe pour que ses mains soient exactement au point de prise sur la liane.
-function placeByHands(grip) {
+function placeByHands(p) {
   monkey.root.position.set(0, 0, 0); monkey.root.updateMatrixWorld(true);
   for (const [n, v] of [['FL', hA], ['FR', hB]]) {
     const w = monkey.bones[n + '3'].getWorldPosition(new THREE.Vector3()), e = monkey.bones[n + '2'].getWorldPosition(new THREE.Vector3());
     v.copy(w).add(w.clone().sub(e).multiplyScalar(0.75));      // un peu au-delà du poignet : la paume
   }
   hands.copy(hA).add(hB).multiplyScalar(0.5);
-  monkey.root.position.copy(grip).sub(hands);
+  monkey.root.position.copy(p).sub(hands);
 }
 
-// ---------- Physique : pendule sur la liane, vol libre entre deux lianes ----------
-const S = { mode: 'hang', li: lianas[1], R: 6.2, th: -SWING, om: 0, pos: new THREE.Vector3(), vel: new THREE.Vector3(), lastZ: -1, fall: 0, count: 0 };
-const anchorOf = (li) => new THREE.Vector3(li.x, AY, li.z);
-let wantRelease = false, time = 0, last = performance.now() / 1000;
+// ---------- La partie ----------
 const auto = params.has('auto');
-function press() { playFilm(); $('note').style.opacity = 0; if (S.mode === 'hang') wantRelease = true; }
-addEventListener('pointerdown', (e) => { e.preventDefault(); press(); }, { passive: false });
-addEventListener('keydown', (e) => { if (e.code === 'Space' && !e.repeat) press(); });
-
-function step(dt) {
-  if (S.mode === 'hang') {
-    const li = S.li;
-    S.om += -(G / S.R) * Math.sin(S.th) * dt; S.th += S.om * dt;
-    // Le singe entretient son élan, comme un enfant sur une balançoire.
-    const E = 0.5 * S.R * S.R * S.om * S.om + G * S.R * (1 - Math.cos(S.th)), Emin = G * S.R * (1 - Math.cos(SWING));
-    if (E < Emin) S.om += Math.sign(S.om || 1) * 1.1 * dt;
-    S.pos.set(li.x, AY - S.R * Math.cos(S.th), li.z + S.R * Math.sin(S.th));
-    li.ang = S.th; li.angV = S.om; li.held = true;
-    if (auto && S.om > 0 && S.th > 0.44) wantRelease = true;
-    if (wantRelease) {
-      wantRelease = false; li.held = false; S.lastZ = li.z;
-      S.vel.set(0, S.R * S.om * Math.sin(S.th), S.R * S.om * Math.cos(S.th)); S.mode = 'fly';
-    }
-  } else {
-    S.vel.y -= G * dt; S.pos.addScaledVector(S.vel, dt);
-    const next = lianas.find((l) => l.z > S.lastZ + 1);
-    if (next) {
-      S.pos.x += (next.x - S.pos.x) * Math.min(1, dt * 5);
-      const dz = S.pos.z - next.z, dy = AY - S.pos.y;
-      if (Math.abs(dz) < REACH && dy > 3.2 && dy < 10 && S.fall <= 0) {      // à portée : il l'attrape
-        S.li = next; S.R = clamp(Math.hypot(dz, dy), 3.4, 9.8); S.th = Math.atan2(dz, dy);
-        S.om = (S.vel.z * Math.cos(S.th) + S.vel.y * Math.sin(S.th)) / S.R; S.mode = 'hang'; S.count++;
-      } else if (dz > REACH + 0.5) S.lastZ = next.z;                          // manquée : il vise la suivante
-    }
-    if (S.pos.y < AY - 22) {            // tombé : on le remet sur une liane (ce n'est qu'un test)
-      const l = lianas.find((q) => q.z > S.pos.z + 3) || lianas[lianas.length - 1];
-      S.li = l; S.R = 6.2; S.th = -SWING; S.om = 0; S.mode = 'hang';
-    }
-  }
+let jeu = null, record = 0, time = 0, last = performance.now() / 1000, tOver = -1, shownDist = -1, shownFruits = -1;
+try { record = +localStorage.getItem('liane-record') || 0; } catch (e) { /* stockage indisponible : le record ne sera pas gardé */ }
+function newGame(z0) {
+  if (jeu) { for (const o of jeu.lianas) scene.remove(o.g); for (const o of jeu.fruits) scene.remove(o.g); }
+  jeu = new Jeu({ seed: +(params.get('graine') || 0) || (Math.random() * 1e9) | 0, z0, n0: +(params.get('rang') || 0), onLiana: buildLiana, onFruit: buildFruit });
+  camera.userData.z = camera.userData.y = undefined; tOver = -1;
+  $('fin').classList.remove('show'); $('hud').classList.remove('off');
 }
+function endGame() {
+  const d = Math.floor(jeu.S.dist), best = d > record;
+  if (best) { record = d; try { localStorage.setItem('liane-record', String(d)); } catch (e) { /* rien */ } }
+  $('finDist').textContent = d; $('finFruits').textContent = jeu.S.fruits ? jeu.S.fruits + (jeu.S.fruits > 1 ? ' fruits' : ' fruit') : '';
+  $('finRec').textContent = best && d > 0 ? 'nouveau record' : 'record ' + record + ' m';
+  $('fin').classList.add('show'); $('hud').classList.add('off');
+}
+
+// Toucher = lâcher. Glisser le doigt de côté pendant l'élan = viser le couloir voisin.
+let sx = null, steered = false;
+function press() {
+  playFilm(); $('note').style.opacity = 0;
+  if (jeu.S.over) { if (tOver >= 0 && time - tOver > 0.9) newGame(jeu.S.pos.z + 6); return; }
+  jeu.release();
+}
+addEventListener('pointerdown', (e) => { e.preventDefault(); sx = e.clientX; steered = false; press(); }, { passive: false });
+addEventListener('pointermove', (e) => {
+  if (sx === null || steered) return;
+  const dx = e.clientX - sx; if (Math.abs(dx) > Math.max(22, innerWidth * 0.06)) { steered = true; jeu.steer(Math.sign(dx)); }
+});
+addEventListener('pointerup', () => { sx = null; }); addEventListener('pointercancel', () => { sx = null; });
+addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  if (e.code === 'Space' || e.code === 'ArrowUp') press(); else if (e.code === 'ArrowLeft') jeu.steer(-1); else if (e.code === 'ArrowRight') jeu.steer(1);
+});
 
 function frame() {
   requestAnimationFrame(frame);
-  // La physique avance au temps réel, par petits pas : un à-coup d'affichage ne fait pas rater une liane.
+  // Les règles avancent au temps réel, par petits pas : un à-coup d'affichage ne fait pas rater une liane.
   const tn = performance.now() / 1000, real = Math.min(0.25, tn - last); last = tn; time += real;
-  const n = Math.max(1, Math.ceil(real / 0.0125)); for (let i = 0; i < n; i++) step(real / n);
-  const dt = Math.min(0.033, real);
+  const n = Math.max(1, Math.ceil(real / 0.0125)); for (let i = 0; i < n; i++) jeu.step(real / n, auto);
+  for (const o of jeu.prune()) scene.remove(o.g);
+  const dt = Math.min(0.033, real), S = jeu.S;
   loopFilm();
+  if (S.over && tOver < 0) { tOver = time; setTimeout(endGame, 450); }
+  if (auto && S.over && time - tOver > 2.5) newGame(S.pos.z + 6);
 
   // Les lianes : celle qu'on tient suit le singe ; les autres se balancent doucement et reviennent quand on les lâche.
-  for (const l of lianas) {
+  for (const l of jeu.lianas) {
     if (!l.held) { const rest = 0.05 * Math.sin(time * 0.7 + l.ph); l.angV += ((rest - l.ang) * 5 - l.angV * 0.9) * dt; l.ang += l.angV * dt; }
-    l.g.rotation.x = -l.ang;
+    if (l.broken) { l.fallV += G * dt; l.fallY += l.fallV * dt; }       // la liane pourrie qui a cédé tombe avec lui
+    l.g.rotation.x = -l.ang; l.g.position.y = AY - l.drop - l.fallY;
   }
-  while (nextZ < S.pos.z + 80) addLiana();
-  while (lianas.length && lianas[0].z < S.pos.z - 22 && lianas[0] !== S.li) scene.remove(lianas.shift().g);
+  for (const f of jeu.fruits) {
+    if (f.taken && f.k > 0) { f.k = Math.max(0, f.k - dt * 7); f.bunch.scale.setScalar(f.k); f.bunch.visible = f.k > 0; }
+    f.g.rotation.z = 0.04 * Math.sin(time * 0.9 + f.seed);
+  }
 
   // Le singe : suspendu par les bras le long de la liane, ou tendu dans le sens de son vol.
   if (S.mode === 'hang') {
     const lag = clamp(S.om * 0.22, -0.35, 0.35);                    // le corps traîne un peu derrière la liane
     monkey.update(dt, { phase: 0, run: 0, crouch: 0, air: -1, hang: 1, bodyPitch: -Math.PI / 2 - S.th + lag, legs: clamp(S.om * 0.35, -0.5, 0.6) });
   } else {
-    const a = Math.atan2(S.vel.y, Math.max(0.5, S.vel.z));
-    monkey.update(dt, { phase: 0, run: 0, crouch: 0, air: -1, hang: 0.85, bodyPitch: -a - 0.35, legs: 0.5 });
+    const a = Math.atan2(S.vel.y, Math.max(0.5, S.vel.z)), fall = S.mode === 'fallen' ? 1 : 0;
+    monkey.update(dt, { phase: 0, run: 0, crouch: 0, air: -1, hang: 0.85, bodyPitch: -a - 0.35, legs: 0.5 + fall * 0.3 * Math.sin(time * 9) });
   }
-  placeByHands(S.pos);
+  placeByHands(grip.set(S.pos.x, S.pos.y, S.pos.z));
 
-  // Caméra : derrière, un peu au-dessus et de côté, pour lire l'arc du balancement.
-  const cz = S.pos.z - 6.6, cy = S.pos.y + 0.35;
+  // Caméra : derrière, un peu au-dessus, pour lire l'arc du balancement et les trois couloirs. Elle ne suit pas la chute jusqu'en bas.
+  const cz = S.pos.z - 6.6, cy = Math.max(S.pos.y, AY - 12.5) + 0.35;
   camera.userData.z = camera.userData.z === undefined ? cz : camera.userData.z + (cz - camera.userData.z) * Math.min(1, dt * 3.2);
   camera.userData.y = camera.userData.y === undefined ? cy : camera.userData.y + (cy - camera.userData.y) * Math.min(1, dt * 2.2);
-  camera.position.set(S.pos.x * 0.5 + 1.15 + Math.sin(time * 0.6) * 0.04, camera.userData.y, camera.userData.z);
-  camera.lookAt(S.pos.x * 0.6 - 0.25, camera.userData.y - 0.75, camera.userData.z + 12);
-  sun.position.set(camera.position.x - 5, camera.position.y + 9, camera.position.z + 12); sun.target.position.copy(S.pos);
-  fill.position.set(camera.position.x + 3, camera.position.y + 1, camera.position.z - 2); fill.target.position.copy(S.pos);
+  camera.position.set(S.pos.x * 0.6 + 0.55 + Math.sin(time * 0.6) * 0.04, camera.userData.y, camera.userData.z);
+  camera.lookAt(S.pos.x * 0.75 - 0.1, camera.userData.y - 0.75, camera.userData.z + 12);
+  sun.position.set(camera.position.x - 5, camera.position.y + 9, camera.position.z + 12); sun.target.position.copy(grip);
+  fill.position.set(camera.position.x + 3, camera.position.y + 1, camera.position.z - 2); fill.target.position.copy(grip);
   for (const m of nears) {
     const rel = m.position.z - camera.position.z;
     if (rel < -1 || rel > 90) resetNear(m, camera.position.z + 30 + Math.random() * 40);
     m.position.x = camera.position.x + m.userData.side * (1.5 + (m.userData.dy + 1) * 0.15); m.position.y = camera.position.y + m.userData.dy - 0.6;
     m.material.opacity = 0.92 * clamp((7 - rel) / 4, 0, 1); m.visible = m.material.opacity > 0.01;
   }
+
+  // L'affichage : la distance, et les fruits dès qu'il y en a un.
+  const d = Math.floor(S.dist);
+  if (d !== shownDist) { shownDist = d; $('dist').textContent = d; }
+  if (S.fruits !== shownFruits) { shownFruits = S.fruits; $('fruits').textContent = S.fruits ? S.fruits + (S.fruits > 1 ? ' fruits' : ' fruit') : ''; }
   renderer.render(scene, camera);
 }
 
 function resize() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); }
 addEventListener('resize', resize); resize();
+newGame(0);
 $('version').textContent = VERSION;
 $('chargement').classList.add('hide');
 playFilm();
 frame();
-window.LIANE = { monkey, camera, S, lianas };
+window.LIANE = { monkey, camera, get jeu() { return jeu; }, newGame };
