@@ -34,22 +34,28 @@
   #accueil .elo { margin-top:3.5vh; font-size:min(5.4vw, 9vh, 40px); letter-spacing:.04em; }
   #accueil .elo small { font-size:.4em; margin-left:.9em; opacity:.85; }
   #accueil .sous { margin-top:1vh; font-size:min(2.3vw, 3.4vh, 12px); opacity:.75; }
+  #accueil .mondes { margin-top:2.6vh; display:flex; align-items:center; gap:1.6vw; }
+  #accueil.on .mondes { pointer-events:auto; }
+  .mondes button { font-size:min(4.4vw, 7vh, 26px); line-height:1; padding:1vh 1.6vw; opacity:.85; }
+  .mondes b { font-weight:300; font-size:min(2.8vw, 4.2vh, 15px); min-width:9em; text-align:center; }
+  #mInfo { margin-top:.4vh; font-size:min(2.1vw, 3.1vh, 11px); opacity:.7; }
   #accueil .go { position:absolute; left:0; right:0; bottom:calc(var(--sb) + 9vh); text-align:center; font-size:min(2.8vw, 4vh, 15px); }
   #accueil .menu { position:absolute; right:calc(var(--sr) + 4vw); top:calc(var(--st) + 5vh); display:flex; gap:5vw; }
   #accueil.on .menu button { pointer-events:auto; }
   .lien { font-size:min(2.5vw, 3.6vh, 13px); padding:1.6vh .4vw; opacity:.9; border-bottom:1px solid rgba(255,246,220,.35); }
 
   /* En course : le chrono, les deux noms, l'écart au passage. */
-  #hud .chrono { position:absolute; left:0; right:0; top:calc(var(--st) + 5.5vh); text-align:center; font-size:min(5.2vw, 8.5vh, 34px); letter-spacing:.04em; }
+  /* La distance est à gauche : le haut de l'écran reste libre, c'est là que pendent les lianes courtes. */
+  #hud .chrono { position:absolute; left:calc(var(--sl) + 5vw); top:calc(var(--st) + 7vh); font-size:min(5.2vw, 8.5vh, 34px); letter-spacing:.04em; }
   #hud .qui { position:absolute; top:calc(var(--st) + 3.2vh); font-size:min(2.2vw, 3.3vh, 11px); opacity:.85; }
   #hMoi { left:calc(var(--sl) + 5vw); } #hLui { right:calc(var(--sr) + 5vw); }
   #ecart { position:absolute; left:0; right:0; top:calc(var(--st) + 25vh); text-align:center; font-size:min(3.6vw, 6vh, 22px); opacity:0; transition:opacity .35s; }
   #ecart.on { opacity:1; } #ecart.avance { color:#d8f7c4; } #ecart.retard { color:#ffc9a8; }
   /* Les crans d'élan : un point s'allume à chaque lâcher dans l'arc doré. */
-  #crans { position:absolute; left:0; right:0; top:calc(var(--st) + 5.5vh + min(5.2vw, 8.5vh, 34px) * 1.35); display:flex; justify-content:center; gap:9px; }
+  #crans { position:absolute; left:calc(var(--sl) + 5vw + 2px); top:calc(var(--st) + 7vh + min(5.2vw, 8.5vh, 34px) * 1.35); display:flex; gap:9px; }
   #crans i { width:7px; height:7px; border-radius:50%; box-shadow:0 0 0 1px rgba(255,246,220,.5); transition:background .25s, box-shadow .25s; }
   #crans i.on { background:#ffd98a; box-shadow:0 0 10px rgba(255,214,120,.9); }
-  #nuit { position:absolute; left:calc(var(--sl) + 3vw); top:46%; font-size:min(2.2vw, 3.3vh, 11px); color:#cfe3ff; opacity:0; transition:opacity .4s; }
+  #nuit { position:absolute; left:calc(var(--sl) + 5vw); top:52%; font-size:min(2.2vw, 3.3vh, 11px); color:#cfe3ff; opacity:0; transition:opacity .4s; }
   #nuit.on { opacity:.9; }
 
   /* Le résultat. */
@@ -59,7 +65,8 @@
   #fTemps { font-weight:200; font-size:min(14vw, 24vh, 104px); line-height:1; letter-spacing:.02em; }
   #fLui, #fPlus, #fCause { font-size:min(2.3vw, 3.4vh, 12px); opacity:.8; }
   #fElo { font-size:min(4.4vw, 7vh, 28px); margin-top:1vh; }
-  #fin .boutons { display:flex; gap:6vw; margin-top:3.5vh; align-items:center; }
+  #fin .boutons { display:flex; gap:6vw; margin-top:3.5vh; align-items:center; pointer-events:none; opacity:.3; transition:opacity .3s; }
+  #fin.pret .boutons { pointer-events:auto; opacity:1; }
   #bSuivant { font-size:min(2.8vw, 4vh, 15px); padding:1.8vh 5vw; border:1px solid rgba(255,246,220,.7); border-radius:999px; }
 
   /* Le classement et les skins. */
@@ -90,6 +97,8 @@
     <h1>LIANE</h1>
     <div class="elo"><span id="aElo">800</span><small class="maj" id="aRang">Bronze</small></div>
     <div class="sous maj"><span id="aPos"></span> · <span id="aSuite"></span></div>
+    <div class="mondes maj" data-ui><button id="mPrec" aria-label="niveau précédent">‹</button><b id="mNom"></b><button id="mSuiv" aria-label="niveau suivant">›</button></div>
+    <div class="maj" id="mInfo"></div>
   </div>
   <div class="menu"><button class="lien maj" id="bClassement" data-ui>classement</button><button class="lien maj" id="bSkins" data-ui>skins</button></div>
   <div class="go maj">touche pour défier un rival</div>
@@ -131,6 +140,6 @@
 <div id="note" class="txt maj ombre vu"></div>
 <div id="version"></div>
 <div id="chargement" class="maj">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=3"></script>
+<script type="module" src="main.js?v=4"></script>
 </body>
 </html>

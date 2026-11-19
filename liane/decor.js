@@ -1,6 +1,6 @@
 // LIANE — le décor : tout est dessiné par le code, en silhouettes et en lumière. Aucune image, aucun film.
 // Chaque plan de forêt est peint une fois dans une bande qui se répète, puis glisse à sa propre vitesse.
-import { rnd } from './jeu.js?v=3';
+import { rnd } from './jeu.js?v=4';
 
 const TAU = Math.PI * 2;
 
@@ -19,7 +19,28 @@ export const PAL = {
   near: '#020f12',                         // les feuilles floues du premier plan
   mist: '255,236,184',
   glow: '255,238,170',
+  astre: ['255,250,228', '255,238,180', '255,226,150'],   // le soleil : son cœur, son halo, sa lueur lointaine
 };
+// Une palette par niveau : la même forêt, à une autre heure. La première est celle d'origine.
+export const PALETTES = {
+  canopee: JSON.parse(JSON.stringify(PAL)),
+  aube: {     // brume rose : le petit matin, mauve et pêche
+    sky: [[0, '#241d44'], [0.28, '#553a70'], [0.52, '#a9678c'], [0.7, '#f0a48c'], [0.84, '#ffd6b2'], [1, '#ffe4c6']],
+    layers: [{ top: '#c7a2b8', bot: '#f5d0b6' }, { top: '#9d789e', bot: '#e8b6a6' }, { top: '#6a4c82', bot: '#c08b98' }, { top: '#3d285c', bot: '#7b5278' }],
+    play: { top: '#2a1a46', bot: '#150c29' }, rim: 'rgba(255,214,196,0.65)', ink: '#0d0719', near: '#080411', mist: '255,216,200', glow: '255,224,196', astre: ['255,246,232', '255,222,196', '255,196,170'],
+  },
+  braise: {   // braise : le couchant, orange et brun rouge, des lianes sèches
+    sky: [[0, '#291320'], [0.28, '#66292c'], [0.52, '#b5512e'], [0.7, '#ee983e'], [0.84, '#ffd07a'], [1, '#ffc25c']],
+    layers: [{ top: '#d79a64', bot: '#f5cd86' }, { top: '#b4673e', bot: '#e8a660' }, { top: '#7b392c', bot: '#c1713e' }, { top: '#451c1e', bot: '#7b392a' }],
+    play: { top: '#2f121a', bot: '#17080d' }, rim: 'rgba(255,196,120,0.7)', ink: '#12060a', near: '#0b0306', mist: '255,204,140', glow: '255,212,140', astre: ['255,244,214', '255,214,140', '255,170,90'],
+  },
+  lune: {     // lune : la forêt bleue, sous une lune froide
+    sky: [[0, '#040a1c'], [0.28, '#0b1d42'], [0.52, '#1b3d70'], [0.7, '#3e6d9c'], [0.84, '#84acc9'], [1, '#b6d0e0']],
+    layers: [{ top: '#7da1c2', bot: '#b5cddc' }, { top: '#52779c', bot: '#91b1c8' }, { top: '#2a4a72', bot: '#5a80a2' }, { top: '#12294a', bot: '#2a4a6e' }],
+    play: { top: '#0b1c38', bot: '#040b1c' }, rim: 'rgba(200,226,255,0.7)', ink: '#020611', near: '#01030a', mist: '200,224,255', glow: '214,232,255', astre: ['240,247,255', '204,226,255', '170,205,255'],
+  },
+};
+export function setPalette(id) { Object.assign(PAL, JSON.parse(JSON.stringify(PALETTES[id] || PALETTES.canopee))); }
 
 function blob(g, x, y, r) { g.moveTo(x + r, y); g.arc(x, y, r, 0, TAU); }
 
@@ -130,9 +151,9 @@ export function buildDecor(W, H, S, baseY, seed = 7) {
     const sx = W * 0.7, sy = yw(5.4), r = rnd(seed + 11);
     for (let i = 0; i < 7; i++) {                // voiles de nuages, étirés à l'horizontale
       const cx = r() * W, cy = yw(4 + r() * 8), rx = S * (5 + r() * 9), ry = S * (0.35 + r() * 0.5);
-      g.save(); g.translate(cx, cy); g.scale(1, ry / rx); const cg = g.createRadialGradient(0, 0, 0, 0, 0, rx); cg.addColorStop(0, 'rgba(255,244,214,0.26)'); cg.addColorStop(1, 'rgba(255,244,214,0)'); g.fillStyle = cg; g.beginPath(); g.arc(0, 0, rx, 0, TAU); g.fill(); g.restore();
+      g.save(); g.translate(cx, cy); g.scale(1, ry / rx); const cg = g.createRadialGradient(0, 0, 0, 0, 0, rx); cg.addColorStop(0, `rgba(${PAL.astre[0]},0.26)`); cg.addColorStop(1, `rgba(${PAL.astre[0]},0)`); g.fillStyle = cg; g.beginPath(); g.arc(0, 0, rx, 0, TAU); g.fill(); g.restore();
     }
-    let sg = g.createRadialGradient(sx, sy, 0, sx, sy, S * 13); sg.addColorStop(0, 'rgba(255,250,228,0.95)'); sg.addColorStop(0.12, 'rgba(255,238,180,0.6)'); sg.addColorStop(0.45, 'rgba(255,226,150,0.2)'); sg.addColorStop(1, 'rgba(255,220,140,0)');
+    let sg = g.createRadialGradient(sx, sy, 0, sx, sy, S * 13); sg.addColorStop(0, `rgba(${PAL.astre[0]},0.95)`); sg.addColorStop(0.12, `rgba(${PAL.astre[1]},0.6)`); sg.addColorStop(0.45, `rgba(${PAL.astre[2]},0.2)`); sg.addColorStop(1, `rgba(${PAL.astre[2]},0)`);
     g.fillStyle = sg; g.fillRect(0, 0, W, H);
     sg = g.createRadialGradient(sx, sy, 0, sx, sy, S * 1.5); sg.addColorStop(0, 'rgba(255,255,244,1)'); sg.addColorStop(0.7, 'rgba(255,252,230,0.95)'); sg.addColorStop(1, 'rgba(255,246,210,0)');
     g.fillStyle = sg; g.beginPath(); g.arc(sx, sy, S * 1.5, 0, TAU); g.fill();

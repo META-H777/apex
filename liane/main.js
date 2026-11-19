@@ -1,11 +1,11 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des skins.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
-import { Jeu, CFG, rnd, pilote } from './jeu.js?v=3';
-import { buildDecor, drawTile, PAL } from './decor.js?v=3';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, elo, adversaire, classement } from './rivaux.js?v=3';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=4';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=4';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, elo, adversaire, classement } from './rivaux.js?v=4';
 
-const VERSION = 'v0.2';
+const VERSION = 'v0.3';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -13,6 +13,12 @@ const TAU = Math.PI * 2;
 const cv = $('ecran'), ctx = cv.getContext('2d', { alpha: false });
 const auto = params.get('auto');
 const OR = '255,214,120';
+// Un petit journal, gardé sur l'appareil : il dit pourquoi une partie a démarré ou s'est arrêtée. On le lit en ajoutant ?journal=1 à l'adresse.
+function journal(q) { try { const j = JSON.parse(localStorage.getItem('liane-journal') || '[]'); j.push([Date.now(), q]); localStorage.setItem('liane-journal', JSON.stringify(j.slice(-60))); } catch (e) { /* rien */ } }
+// Le niveau choisi : il fixe la difficulté (jeu.js), les couleurs (decor.js) et l'allure des lianes.
+let monde = MONDES[clamp(profil.monde | 0, 0, MONDES.length - 1)];
+const ALLURE = { canopee: { ep: 0.1, feuilles: 5 }, aube: { ep: 0.085, feuilles: 6 }, braise: { ep: 0.07, feuilles: 2 }, lune: { ep: 0.12, feuilles: 4 } };
+setPalette(monde.id);
 
 // ---------- L'écran ----------
 let W = 0, H = 0, S = 1, baseY = 0, D = null, portrait = false, dpr = 1, qualite = 1, ancre = 0.44, vue = 0.44;
@@ -30,11 +36,11 @@ function resize() {
 let jeu, M, B, pil, camX = 0, camLead = 3, camDy = 0, time = 0, last = performance.now() / 1000;
 let phase = 'accueil';                 // accueil, course ou fin
 let parcours = PARCOURS[0], rival = null, G = null, Bg = null, t = 0, mortT = 0, depasse = false, ecartT = -9, ignoreUp = false;
-let aide = 9, arcVu = null, arcT = 0, cransVus = -1, distVue = -1, nuitVue = '', fluide = 0.016, mesureT = 0;
+let accueilT = -9, aide = 9, arcVu = null, arcT = 0, cransVus = -1, distVue = -1, nuitVue = '', fluide = 0.016, mesureT = 0;
 const Mg = {}, trail = [], rings = [];
 const X = (x) => (x - camX) * S + W * vue, Y = (y) => baseY - y * S + camDy;
 const corps = () => ({ phi: -0.4, phiV: 0, kick: 0, kickV: 0, tuck: 0, squash: 0, tail: null });
-function scene(seed, nuit) { jeu = new Jeu(seed, nuit); M = jeu.M; B = corps(); pil = { gout: 0.9 }; camX = M.x + 3; camLead = 3; trail.length = 0; rings.length = 0; mortT = 0; arcVu = null; }
+function scene(seed, nuit) { jeu = new Jeu(seed, nuit, monde); M = jeu.M; B = corps(); pil = { gout: 0.9 }; camX = M.x + 3; camLead = 3; trail.length = 0; rings.length = 0; mortT = 0; arcVu = null; }
 const dire = (txt) => { $('note').textContent = txt; $('note').classList.remove('vu'); };
 const taire = () => $('note').classList.add('vu');
 function majCrans(n) { if (n === cransVus) return; cransVus = n; const el = $('crans').children; for (let i = 0; i < el.length; i++) el[i].classList.toggle('on', i < n); }
@@ -43,16 +49,24 @@ function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
   $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom;
   $('aPos').textContent = pos + (pos === 1 ? 'er' : 'e') + ' sur ' + cl.length;
-  $('aSuite').textContent = (r.suivant ? r.suivant[1] + ' à ' + r.suivant[0] : 'rang le plus haut') + (profil.record ? ' · record ' + profil.record + ' m' : '');
+  $('aSuite').textContent = r.suivant ? r.suivant[1] + ' à ' + r.suivant[0] : 'rang le plus haut';
+  const i = MONDES.indexOf(monde), rec = (profil.records || {})[monde.id];
+  $('mNom').textContent = monde.nom; $('mInfo').textContent = 'niveau ' + (i + 1) + ' sur ' + MONDES.length + (rec ? ' · record ' + rec + ' m' : '');
+}
+function changerMonde(pas) {
+  const i = (MONDES.indexOf(monde) + pas + MONDES.length) % MONDES.length; monde = MONDES[i]; profil.monde = i; garder();
+  setPalette(monde.id); resize(); scene((Math.random() * 1e9) | 0, false); majAccueil();
 }
 function accueil() {
-  phase = 'accueil'; scene((Math.random() * 1e9) | 0, false); majAccueil();
+  phase = 'accueil'; accueilT = time; scene((Math.random() * 1e9) | 0, false); majAccueil(); journal('accueil');
+  $('fin').classList.remove('pret');
   for (const id of ['fin', 'hud', 'classement', 'skins']) $(id).classList.remove('on');
   $('accueil').classList.add('on'); taire();
 }
-function lancer(revanche) {
+function lancer(revanche, source = 'code') {
+  journal('duel lancé : ' + source); $('fin').classList.remove('pret');
   if (!revanche || !rival) { parcours = PARCOURS[(Math.random() * PARCOURS.length) | 0]; rival = adversaire(profil.elo, rival); }
-  G = fantome(parcours, rival); Bg = corps(); scene(parcours, true);
+  G = fantome(parcours, rival, monde); Bg = corps(); scene(parcours, true);
   phase = 'course'; t = 0; depasse = false; ecartT = -9; distVue = -1; nuitVue = ''; majCrans(0);
   aide = profil.v + profil.d < 3 ? 0 : 9;                // les premières parties, le jeu dit quoi faire, liane après liane
   for (const id of ['accueil', 'fin', 'classement', 'skins']) $(id).classList.remove('on');
@@ -64,16 +78,19 @@ function lancer(revanche) {
 function finir() {
   const dist = Math.round(Math.max(0, M.x)), lui = Math.round(G.dist), gagne = dist > lui, avant = profil.elo, d = elo(profil.elo, rival.elo, gagne), rAvant = rang(avant).nom;
   profil.elo = Math.max(100, profil.elo + d); if (gagne) profil.v++; else profil.d++;
-  const rec = dist > (profil.record || 0); if (rec) profil.record = dist;
-  garder(); phase = 'fin'; taire();
+  profil.records = profil.records || {}; const rec = dist > (profil.records[monde.id] || 0); if (rec) profil.records[monde.id] = dist;
+  profil.record = Math.max(profil.record || 0, dist);
+  garder(); phase = 'fin'; taire(); journal('fin : ' + (M.mort === 'nuit' ? 'nuit' : 'chute') + ' à ' + dist + ' m');
   const skin = SKINS.find((s) => s.seuil > avant && s.seuil <= profil.elo), rAp = rang(profil.elo).nom;
   $('fTitre').textContent = gagne ? 'victoire' : 'défaite'; $('fin').classList.toggle('perdu', !gagne);
   $('fTemps').textContent = dist + ' m';
   $('fLui').textContent = rival.nom + ' ' + lui + ' m · écart ' + (dist - lui >= 0 ? '+' : '−') + Math.abs(dist - lui) + ' m';
-  $('fCause').textContent = (M.mort === 'nuit' ? 'rattrapé par la nuit' : 'tombé') + (rec ? ' · nouveau record' : ' · record ' + profil.record + ' m');
+  $('fCause').textContent = (M.mort === 'nuit' ? 'rattrapé par la nuit' : 'tombé') + (rec ? ' · nouveau record' : ' · record ' + profil.records[monde.id] + ' m');
   $('fElo').textContent = avant + ' → ' + profil.elo + ' (' + (d >= 0 ? '+' : '−') + Math.abs(d) + ')';
   $('fPlus').textContent = skin ? 'nouveau skin : ' + skin.nom : rAp !== rAvant ? 'nouveau rang : ' + rAp : rang(profil.elo).nom;
   $('hud').classList.remove('on'); $('fin').classList.add('on');
+  // Les boutons ne répondent qu'après un instant : un doigt qui tapote encore au moment de la chute ne relance pas une partie par accident.
+  setTimeout(() => { if (phase === 'fin') $('fin').classList.add('pret'); }, 900);
 }
 
 // ---------- Les commandes : un seul doigt ----------
@@ -83,18 +100,25 @@ function hold(h) {
   jeu.setHold(h);
 }
 const ui = (e) => e.target.closest && e.target.closest('[data-ui]');
+// On compte les doigts posés : le singe ne lâche que lorsque le dernier se lève. Un second doigt ne provoque plus de lâcher involontaire.
+const doigts = new Set();
 addEventListener('pointerdown', (e) => {
   if (ui(e)) return; e.preventDefault();
-  if (phase === 'accueil') { lancer(false); ignoreUp = true; return; }
-  hold(true);
+  if (phase === 'accueil') { if (time - accueilT > 0.5) { lancer(false, 'toucher à l\'accueil'); ignoreUp = true; } return; }
+  doigts.add(e.pointerId); hold(true);
 }, { passive: false });
-addEventListener('pointerup', (e) => { if (ignoreUp) { ignoreUp = false; return; } if (!ui(e)) hold(false); });
-addEventListener('pointercancel', () => hold(false));
+const leve = (e) => { if (ignoreUp) { ignoreUp = false; doigts.clear(); return; } doigts.delete(e.pointerId); if (!doigts.size) hold(false); };
+addEventListener('pointerup', leve);
+addEventListener('pointercancel', (e) => { journal('doigt annulé par le système'); leve(e); });
+addEventListener('blur', () => { doigts.clear(); hold(false); });
+document.addEventListener('visibilitychange', () => journal(document.hidden ? 'page masquée' : 'page affichée'));
 addEventListener('contextmenu', (e) => e.preventDefault());
-addEventListener('keydown', (e) => { if (e.code !== 'Space' || e.repeat) return; e.preventDefault(); if (phase === 'accueil') lancer(false); else if (phase === 'fin') lancer(true); else hold(true); });
+addEventListener('keydown', (e) => { if (e.code !== 'Space' || e.repeat) return; e.preventDefault(); if (phase === 'accueil') lancer(false, 'clavier'); else if (phase === 'fin') { if ($('fin').classList.contains('pret')) lancer(true, 'clavier'); } else hold(true); });
 addEventListener('keyup', (e) => { if (e.code === 'Space') hold(false); });
 const clic = (id, fn) => $(id).addEventListener('click', (e) => { e.stopPropagation(); fn(); });
-clic('bSuivant', () => lancer(false)); clic('bRevanche', () => lancer(true)); clic('bAccueil', accueil);
+const pret = () => $('fin').classList.contains('pret');
+clic('bSuivant', () => { if (pret()) lancer(false, 'bouton rival suivant'); }); clic('bRevanche', () => { if (pret()) lancer(true, 'bouton revanche'); }); clic('bAccueil', () => { if (pret()) accueil(); });
+clic('mPrec', () => changerMonde(-1)); clic('mSuiv', () => changerMonde(1));
 clic('bClassement', () => { ouvrirClassement(); }); clic('bSkins', () => { ouvrirSkins(); });
 clic('cFermer', () => $('classement').classList.remove('on')); clic('sFermer', () => { $('skins').classList.remove('on'); });
 
@@ -175,6 +199,7 @@ function drawMonkey(p, col) {
 
 // ---------- Les lianes ----------
 function drawLianas() {
+  const al = ALLURE[monde.id] || ALLURE.canopee, lis = Math.max(1.5, S * 0.035);
   ctx.strokeStyle = ctx.fillStyle = PAL.ink; ctx.lineCap = 'round';
   for (const li of jeu.lianas) {
     const ax = X(li.x); if (ax < -S * 12 || ax > W + S * 12) continue;
@@ -183,21 +208,27 @@ function drawLianas() {
       const hx = X(M.x), hy = Y(M.y), rem = Math.max(0, li.L - M.R);
       li.ta = (li.ta ?? M.th) + ((M.th * 0.5 - clamp(M.om * 0.16, -0.6, 0.6)) - (li.ta ?? M.th)) * 0.18;   // le bout libre pend surtout vers le bas
       ex = hx + Math.sin(li.ta) * rem * S; ey = hy + Math.cos(li.ta) * rem * S;
-      ctx.lineWidth = S * 0.1; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(hx, hy); ctx.quadraticCurveTo(hx + Math.sin(M.th) * rem * S * 0.35, hy + Math.cos(M.th) * rem * S * 0.35, ex, ey); ctx.stroke();
+      ctx.lineWidth = S * al.ep; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(hx, hy); ctx.quadraticCurveTo(hx + Math.sin(M.th) * rem * S * 0.35, hy + Math.cos(M.th) * rem * S * 0.35, ex, ey); ctx.stroke();
       cx = (ax + hx) / 2; cy = (ay + hy) / 2;
     } else {                  // libre : elle se balance et se courbe selon son élan
       li.ta = undefined;
       ex = ax + Math.sin(li.a) * li.L * S; ey = ay + Math.cos(li.a) * li.L * S;
       cx = (ax + ex) / 2 - Math.cos(li.a) * li.av * li.L * S * 0.07; cy = (ay + ey) / 2;
-      ctx.lineWidth = S * 0.1; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(cx, cy, ex, ey); ctx.stroke();
+      if (li.dur) { ctx.strokeStyle = PAL.rim; ctx.lineWidth = S * al.ep; ctx.beginPath(); ctx.moveTo(ax + lis, ay - lis); ctx.quadraticCurveTo(cx + lis, cy - lis, ex + lis, ey - lis); ctx.stroke(); ctx.strokeStyle = PAL.ink; }   // un liseré de lumière la détache du fond
+      ctx.lineWidth = S * al.ep; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(cx, cy, ex, ey); ctx.stroke();
     }
     ctx.beginPath();          // quelques feuilles le long de la liane
-    for (let i = 0; i < 5; i++) {
-      const tt = 0.2 + 0.72 * (i + r()) / 5, side = i % 2 ? 1 : -1, lx = (1 - tt) * (1 - tt) * ax + 2 * (1 - tt) * tt * cx + tt * tt * ex, ly = (1 - tt) * (1 - tt) * ay + 2 * (1 - tt) * tt * cy + tt * tt * ey;
+    for (let i = 0; i < al.feuilles; i++) {
+      const tt = 0.2 + 0.72 * (i + r()) / al.feuilles, side = i % 2 ? 1 : -1, lx = (1 - tt) * (1 - tt) * ax + 2 * (1 - tt) * tt * cx + tt * tt * ex, ly = (1 - tt) * (1 - tt) * ay + 2 * (1 - tt) * tt * cy + tt * tt * ey;
       const sz = S * (0.16 + r() * 0.1), an = (tenue ? M.th : li.a) * -1 + side * (0.9 + r() * 0.4) + Math.PI / 2;
       ctx.moveTo(lx, ly); ctx.ellipse(lx + Math.cos(an) * sz, ly + Math.sin(an) * sz, sz, sz * 0.42, an, 0, TAU);
     }
     ctx.fill();
+    if (li.dur) {             // une liane de passage dur porte des fleurs claires : on la reconnaît de loin
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.9;
+      for (let i = 0; i < 4; i++) { const tt = 0.3 + 0.7 * i / 3, fx = (1 - tt) * (1 - tt) * ax + 2 * (1 - tt) * tt * cx + tt * tt * ex, fy = (1 - tt) * (1 - tt) * ay + 2 * (1 - tt) * tt * cy + tt * tt * ey, fs = S * (0.26 + 0.08 * (i % 2)); ctx.drawImage(D.dot, fx - fs, fy - fs, fs * 2, fs * 2); }
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.fillStyle = PAL.ink;
+    }
   }
 }
 // L'arc doré : la portion du balancement où il faut lâcher. Il s'éclaire quand les mains y passent.
@@ -266,7 +297,7 @@ function frame() {
   vue += ((phase === 'accueil' && !portrait ? 0.66 : ancre) - vue) * Math.min(1, real * 3);
   camLead += (clamp(M.vx * 0.32, 1.5, 6.5) - camLead) * Math.min(1, dt * 1.6);
   camX += (M.x + camLead - camX) * Math.min(1, dt * 7);
-  camDy += ((Math.max(M.y, 0) - 6) * S * 0.16 - camDy) * Math.min(1, dt * 2.5);
+  camDy += ((Math.max(M.y, 0) - 6) * S * 0.3 - camDy) * Math.min(1, dt * 2.5);
 
   // Le ciel, puis les plans de forêt avec leurs nappes de brume, puis les rayons.
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
@@ -374,6 +405,10 @@ function frame() {
 addEventListener('resize', resize); resize();
 $('version').textContent = VERSION;
 window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get image() { return { dpr, qualite, fluide }; }, profil, CFG, lancer, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
+journal('page ouverte');
+if (params.get('journal')) { let j = []; try { j = JSON.parse(localStorage.getItem('liane-journal') || '[]'); } catch (e) { /* rien */ }
+  const pre = document.createElement('pre'); pre.setAttribute('data-ui', ''); pre.style.cssText = 'position:fixed;inset:0;margin:0;padding:12px;overflow:auto;background:rgba(2,12,16,.94);color:#fff6dc;font:12px/1.5 monospace;z-index:9;touch-action:pan-y;-webkit-user-select:text;user-select:text';
+  pre.textContent = 'Journal de LIANE ' + VERSION + ' (les plus récents en bas)\n\n' + j.map(([t, q]) => new Date(t).toLocaleTimeString('fr-FR') + '  ' + q).join('\n'); document.body.appendChild(pre); }
 accueil();
 $('chargement').classList.add('vu');
 frame();

@@ -21,26 +21,36 @@ export const CFG = {
   portee: 1.9,           // les mains saisissent une liane à cette distance devant elles
   portee2: 0.9,          // et un peu moins derrière
   minR: 2.4,             // on ne saisit pas une liane juste sous son accroche
-  ecart: 11.5,           // distance entre deux lianes
-  debut: 2,              // les toutes premières sont plus rapprochées de cette distance, puis l'écart s'ouvre sur 160 m
-  arc: [0.36, 0.16, 0.1],// largeur de l'arc doré : au début, à 1 600 m, puis à 5 000 m (en radians)
+  debut: 2,              // les toutes premières lianes sont plus rapprochées de cette distance, puis l'écart s'ouvre sur 120 m
   arcMin: 0.45,          // l'arc doré ne descend jamais plus bas que cet angle
   bout: 1.32,            // angle où le balancement arrive au bout
-  confort: 7,            // s'il revient en arrière sur une corde plus courte que ça, le singe se laisse glisser le long de la liane
-  glisse: 3,             // à cette vitesse : une corde plus longue lui rend de l'élan
+  glisse: 3,             // s'il revient en arrière, le singe se laisse glisser le long de la liane à cette vitesse : une corde plus longue lui rend de l'élan
   repos: 0.6,            // délai avant de pouvoir resaisir la liane qu'on vient de lâcher
   nuitDepart: 30,        // la nuit part de cette distance derrière le singe
   nuitRecul: 34,         // et ne se laisse jamais distancer de plus
-  nuitV: [4.5, 12.2, 80],// sa vitesse : au départ, à la longue, et le temps pour y arriver
-  nuitPlus: 0.004,       // puis elle accélère encore, lentement, sans fin
 };
 
 export function rnd(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-// La difficulté du parcours, de 0 à 1, selon la distance : rien ne change avant 100 m, tout est au maximum à 1 600 m.
-export const niveau = (x) => clamp((x - 100) / 1500, 0, 1);
-export const largeurArc = (x) => x < 1600 ? CFG.arc[0] + (CFG.arc[1] - CFG.arc[0]) * niveau(x) : CFG.arc[1] + (CFG.arc[2] - CFG.arc[1]) * clamp((x - 1600) / 3400, 0, 1);
-export const vitesseNuit = (t) => CFG.nuitV[0] + (CFG.nuitV[1] - CFG.nuitV[0]) * (1 - Math.exp(-t / CFG.nuitV[2])) + CFG.nuitPlus * t;
+// ---------- Les niveaux : la même règle du jeu, une forêt de plus en plus exigeante ----------
+// x0, pente : où la difficulté commence à monter, et sur quelle distance elle atteint son maximum.
+// ecart : distance moyenne entre deux lianes, au plus facile puis au plus dur ; alea : de combien elle varie ; serre : chance d'un écart resserré.
+// bout : hauteur du bout libre des lianes (plus c'est haut, plus la liane est courte) ; haut : de combien les accroches montent ou descendent.
+// passage : distance entre deux passages durs, au plus facile puis au plus dur. arc : largeur de l'arc doré, au début, au plus dur, puis très loin.
+// nuit : vitesse de la nuit au départ, à la longue, temps pour y arriver, et accélération sans fin. tenue : les rivaux y tiennent moins longtemps.
+export const MONDES = [
+  { id: 'canopee', nom: 'Canopée', x0: 40, pente: 800, ecart: [11.5, 13.4], alea: 5, serre: 0.14, bout: [2.4, 3.4], haut: 3.2, passage: [190, 80], arc: [0.3, 0.15, 0.09], nuit: [4.8, 12.3, 75, 0.004], tenue: 1 },
+  { id: 'aube', nom: 'Brume rose', x0: -60, pente: 650, ecart: [11.8, 13.8], alea: 6, serre: 0.2, bout: [2.4, 3], haut: 3.6, passage: [140, 60], arc: [0.26, 0.13, 0.08], nuit: [5.6, 12.6, 65, 0.004], tenue: 0.8 },
+  { id: 'braise', nom: 'Braise', x0: -160, pente: 520, ecart: [12, 14], alea: 5.5, serre: 0.16, bout: [3.2, 3.2], haut: 3.4, passage: [105, 48], arc: [0.23, 0.14, 0.09], nuit: [6.4, 12.9, 55, 0.005], tenue: 0.62 },
+  { id: 'lune', nom: 'Lune', x0: -300, pente: 450, ecart: [12, 14.2], alea: 6.5, serre: 0.22, bout: [2.8, 3.4], haut: 4.4, passage: [75, 36], arc: [0.2, 0.13, 0.09], nuit: [7.4, 13.1, 45, 0.005], tenue: 0.48 },
+];
+// Les passages durs : des lianes qui demandent un lâcher précis. f vaut 1 au premier essai et baisse si la liane est refusée par les éclaireurs.
+const HAUTE = (r, k, f) => { const y = 14 + r() * 1.3 * f, L = 3.4 + r() * 1.2 + (1 - f) * 2.5; return { dx: 6.6 + r() * 1.8, y, bout: y - L }; };   // courte et haute : il faut arriver par en haut
+const SAUT = (r, k, f) => ({ dx: 13.4 + (1.6 + 2.2 * k) * f + r() * 0.8, y: 13 + (r() - 0.5), bout: 2.4 + r() * 1.4 });                                // grand vide : un lâcher tendu, sans marge
+const SERREE = (r, k, f) => ({ dx: 7 + r() * 1.4, y: 13 + (r() - 0.5) * 2.6 * f, bout: 3 + r() * 4.4 * f });                                           // enfilade : trois lianes coup sur coup
+const MARCHE = (j) => (r, k, f) => ({ dx: 7.8 + r() * 1.6, y: 12.5 + j * 1.05 * f, bout: 5 + j * 1.4 * f + r() * 0.8 });                               // escalier : chaque liane plus haute et plus courte
+const PLONGEON = (r, k, f) => ({ dx: 6.4 + r() * 2.2 + (1 - f) * 2, y: 13 + (r() - 0.5), bout: 2.4 });                                                 // après une liane haute : on se laisse tomber sur une longue liane, et la chute devient de l'élan
+const MOTIFS = [[HAUTE, PLONGEON], [SAUT], [SERREE, SERREE, SERREE], [MARCHE(0), MARCHE(1), MARCHE(2), PLONGEON], [HAUTE, PLONGEON, HAUTE, PLONGEON], [SAUT, HAUTE, PLONGEON], [SERREE, SAUT]];
 // L'énergie de balancement que le singe entretient sur une corde de longueur R, selon ses crans d'élan.
 const cible = (R, chaine) => CFG.g * R * CFG.amp * (1 + CFG.elan * Math.min(chaine, CFG.crans));
 
@@ -91,7 +101,7 @@ export function pas(m, lianas, dt, ev) {
       if (m.th > C.bout) m.om -= m.om * Math.min(1, 30 * dt);            // au bout du balancement, il ne monte plus
     } else {
       m.om -= m.om * 0.7 * dt;                                           // en arrière, il s'essouffle
-      const Rmax = Math.min(C.confort, m.li.L - 0.6);                    // et il se laisse glisser si sa corde est trop courte pour repartir
+      const Rmax = m.li.L - 0.6;                                         // et il se laisse glisser vers le bas de la liane
       if (m.R < Rmax) { const R2 = Math.min(Rmax, m.R + C.glisse * dt); m.om *= m.R / R2; m.R = R2; }
       if (m.th < -C.bout) m.om -= m.om * Math.min(1, 30 * dt);
     }
@@ -144,9 +154,10 @@ export function arcDore(m, lianas, largeur, prof = 2) {
 }
 
 export class Jeu {
-  // nuit : faux pour l'écran d'accueil, où le singe se promène sans danger.
-  constructor(seed = 1, nuit = true) {
-    this.r = rnd(seed); this.lianas = []; this.id = 0; this.time = 0; this.events = []; this.impasses = 0;
+  // nuit : faux pour l'écran d'accueil, où le singe se promène sans danger. monde : le niveau, qui fixe la difficulté.
+  constructor(seed = 1, nuit = true, monde = MONDES[0]) {
+    this.r = rnd(seed); this.d = monde; this.lianas = []; this.id = 0; this.time = 0; this.events = []; this.impasses = 0; this.durs = 0;
+    this.file = []; this.prochain = 70 + monde.passage[0] * (0.3 + 0.5 * this.r());       // le premier passage dur n'arrive pas tout de suite
     const li = this.liane(0, 13, 2.4);
     this.M = { mode: 'swing', li, R: 7, th: -0.55, om: 0, x: 0, y: 0, vx: 0, vy: 0, hold: false, idle: true, depart: false, want: false, air: 0, last: null, chaine: 0, parfaits: 0, saisies: 0, mort: null, arc: null };
     pose(this.M);
@@ -156,6 +167,10 @@ export class Jeu {
     this.nuit = { on: nuit, x: -CFG.nuitDepart, t: 0, v: 0 };
   }
   get dernier() { return this.lianas[this.lianas.length - 1]; }
+  // La difficulté, de 0 à 1, selon la distance ; la largeur de l'arc doré ; la vitesse de la nuit.
+  niv(x) { return clamp((x - this.d.x0) / this.d.pente, 0, 1); }
+  larg(x) { const a = this.d.arc, fin = this.d.x0 + this.d.pente; return x < fin ? a[0] + (a[1] - a[0]) * this.niv(x) : a[1] + (a[2] - a[1]) * clamp((x - fin) / 3000, 0, 1); }
+  vNuit(t) { const n = this.d.nuit; return n[0] + (n[1] - n[0]) * (1 - Math.exp(-t / n[2])) + n[3] * t; }
   liane(x, y, bout) { const li = { id: this.id++, x, y, L: y - bout, a: 0, av: 0, ph: this.r() * 6.28, seed: (this.r() * 1e9) | 0 }; this.lianas.push(li); return li; }
 
   // Est-ce que les deux éclaireurs franchissent la dernière liane avec un arc doré assez large ? Si oui, renvoie leurs arcs.
@@ -166,19 +181,28 @@ export class Jeu {
     }
     return arcs;
   }
-  // Une liane : un point d'accroche dans la canopée et une longueur. Plus on va loin, plus elles sont espacées, inégales et courtes.
+  // Une liane ordinaire : l'écart s'ouvre avec la distance, mais se resserre de temps en temps ; hauteurs et longueurs de plus en plus inégales.
+  libre(k, f) {
+    const r = this.r, d = this.d, prev = this.dernier;
+    const dx = r() < d.serre * (0.4 + 0.6 * k) ? 7.6 + r() * 1.6 : d.ecart[0] + (d.ecart[1] - d.ecart[0]) * k * f - CFG.debut * Math.max(0, 1 - prev.x / 120) + (r() - 0.5) * (0.8 + d.alea * k) * f;
+    return { dx, y: 13 + (r() - 0.5) * d.haut * k * f, bout: d.bout[0] + k * (0.4 + r() * d.bout[1]) * f };
+  }
   addLiana() {
-    const r = this.r, prev = this.dernier, k = niveau(prev.x), larg = largeurArc(prev.x);
+    const r = this.r, d = this.d, prev = this.dernier, k = this.niv(prev.x), larg = this.larg(prev.x);
+    // De loin en loin, un passage dur : une ou plusieurs lianes spéciales, tirées au hasard. De plus en plus souvent avec la distance.
+    if (!this.file.length && prev.x >= this.prochain) { this.file = MOTIFS[(r() * MOTIFS.length) | 0].slice(); this.prochain = prev.x + (d.passage[0] + (d.passage[1] - d.passage[0]) * k) * (0.6 + 0.8 * r()); }
+    const moule = this.file.shift() || null;
     let arcs = null, li = null;
     for (let i = 0; i < 8 && !arcs; i++) {
-      const f = 1 - i / 8;                                               // à chaque refus, on propose une liane moins extrême
-      const y = 13 + (r() - 0.5) * 3.2 * k * f, bout = 2.4 + k * (0.8 + r() * 3.4) * f, x = prev.x + CFG.ecart - CFG.debut * Math.max(0, 1 - prev.x / 160) + (r() - 0.5) * (0.8 + 5.2 * k) * f + 0.8 * k * f;
-      li = this.liane(x, y, bout); arcs = this.passable(larg); if (!arcs) { this.lianas.pop(); this.id--; }
+      const f = 1 - i / 8, v = moule ? moule(r, k, f) : this.libre(k, f);    // à chaque refus des éclaireurs, on propose une liane moins extrême
+      li = this.liane(prev.x + v.dx, v.y, v.bout); li.dur = !!moule;
+      arcs = this.passable(moule ? Math.max(0.1, larg * 0.6) : larg); if (!arcs) { this.lianas.pop(); this.id--; }
     }
-    for (let d = 0; d < 13 && !arcs; d++) {                              // en dernier recours : une longue liane, à la distance qui convient
-      li = this.liane(prev.x + CFG.ecart + (d % 2 ? 1 : -1) * Math.ceil(d / 2) * 0.6, 13, 2.4); arcs = this.passable(Math.min(larg, 0.2)); if (!arcs) { this.lianas.pop(); this.id--; }
+    if (arcs && moule) this.durs++;
+    for (let e = 0; e < 19 && !arcs; e++) {                              // en dernier recours : une longue liane, à la distance qui convient
+      li = this.liane(prev.x + 10.5 + (e % 2 ? 1 : -1) * Math.ceil(e / 2) * 0.55, 13, 2.4); arcs = this.passable(0.1); if (!arcs) { this.lianas.pop(); this.id--; }
     }
-    if (!arcs) { li = this.liane(prev.x + CFG.ecart, 13, 2.4); this.impasses++; }
+    if (!arcs) { li = this.liane(prev.x + 11, 13, 2.4); this.impasses++; }
     // Les éclaireurs avancent d'une liane, en lâchant au milieu de leur arc.
     this.eclaireurs = this.eclaireurs.map((e, i) => {
       const a = arcs && arcs[i], n = essai(e, this.lianas, a ? (a[0] + a[1]) / 2 : 0.7);
@@ -199,11 +223,11 @@ export class Jeu {
     const li0 = M.mode === 'swing' ? M.li : null, n0 = M.saisies, om0 = M.om;
     pas(M, this.lianas, dt, this.events);
     // À chaque saisie, et à chaque retour vers l'avant, on calcule l'arc doré de cette liane.
-    if (M.mode === 'swing' && !M.idle && (M.saisies !== n0 || (om0 <= 0 && M.om > 0))) M.arc = arcDore(M, this.lianas, largeurArc(M.li.x));
+    if (M.mode === 'swing' && !M.idle && (M.saisies !== n0 || (om0 <= 0 && M.om > 0))) M.arc = arcDore(M, this.lianas, this.larg(M.li.x));
     if (li0 && M.mode === 'fly') { li0.a = M.th; li0.av = M.om * 0.35; }   // la liane lâchée repart en arrière
     const N = this.nuit;
     if (N.on && !M.idle && !M.mort) {                  // la nuit avance, de plus en plus vite
-      N.t += dt; N.v = vitesseNuit(N.t); N.x = Math.max(N.x + N.v * dt, M.x - C.nuitRecul);
+      N.t += dt; N.v = this.vNuit(N.t); N.x = Math.max(N.x + N.v * dt, M.x - C.nuitRecul);
       if (N.x > M.x - 0.8) { M.mort = 'nuit'; this.events.push({ type: 'mort', cause: 'nuit', x: M.x, y: M.y }); }
     }
     for (const li of this.lianas) {                    // les lianes libres : un souffle de vent, et le retour après un lâcher (pour l'œil seulement)
@@ -229,8 +253,8 @@ export function pilote(jeu, st) {
   const M = jeu.M; if (M.mort) return;
   if (M.mode === 'swing') {
     if (M.idle) { jeu.setHold(true); return; }
-    // S'il ne voit aucun lâcher sûr, il reste pendu un aller-retour pour reprendre de la vitesse, puis réessaie.
-    if (st.th === undefined || (M.om > 0 && st.sens <= 0)) { st.th = choisir(M, jeu.lianas, st.gout ?? 0.6, st.r || Math.random); if (st.th === undefined) st.th = (st.essais = (st.essais || 0) + 1) > 3 ? 0.75 : 9; else st.essais = 0; }
+    // S'il ne voit aucun lâcher sûr, il reste pendu un aller-retour pour reprendre de la vitesse, puis réessaie. Quand la nuit est sur ses talons, il ne vise plus que l'arc doré.
+    if (st.th === undefined || (M.om > 0 && st.sens <= 0)) { st.th = choisir(M, jeu.lianas, jeu.nuit.on && M.x - jeu.nuit.x < 16 ? 1 : st.gout ?? 0.6, st.r || Math.random); if (st.th === undefined) st.th = (st.essais = (st.essais || 0) + 1) > 3 ? 0.75 : 9; else st.essais = 0; }
     st.sens = M.om;
     if (M.om > 0 && M.th + M.om / 240 >= st.th) jeu.setHold(false);
   } else { st.th = undefined; jeu.setHold(!st.fini && M.air >= 0.06); }

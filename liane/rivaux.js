@@ -1,7 +1,7 @@
 // LIANE — les rivaux, le classement Elo, les rangs et les skins.
 // Un duel : même forêt pour les deux, celui qui va le plus loin gagne.
 // Tant qu'il n'y a pas de serveur, les rivaux sont simulés : chacun a son niveau, court vraiment le parcours, et laisse un fantôme.
-import { Jeu, rnd, pilote } from './jeu.js?v=3';
+import { Jeu, rnd, pilote, MONDES } from './jeu.js?v=4';
 
 export const PARCOURS = [11, 23, 37, 41, 58, 64, 79, 86];   // les parcours du prototype : chaque numéro donne toujours la même forêt
 
@@ -35,10 +35,10 @@ export const RIVAUX = (() => {
 // Fait courir un rival sur un parcours et enregistre son fantôme, 30 fois par seconde, à partir de son premier lâcher.
 // Plus il est fort, plus il vise l'arc doré (donc plus il va vite et distance la nuit) et plus il tient longtemps avant de manquer une liane.
 const cache = new Map();
-export function fantome(parcours, b) {
-  const key = parcours + ':' + b.id; if (cache.has(key)) return cache.get(key);
-  const jeu = new Jeu(parcours), M = jeu.M, r = rnd(parcours * 1000 + b.id * 7 + 3), st = { gout: 0.25 + 0.75 * b.s, r }, f = [];
-  const tient = (55 + 3200 * Math.pow(b.s, 2.4)) * (0.7 + 0.6 * r());      // la distance où il finit par manquer une liane
+export function fantome(parcours, b, monde = MONDES[0]) {
+  const key = monde.id + ':' + parcours + ':' + b.id; if (cache.has(key)) return cache.get(key);
+  const jeu = new Jeu(parcours, true, monde), M = jeu.M, r = rnd(parcours * 1000 + b.id * 7 + 3), st = { gout: 0.45 + 0.55 * b.s, r }, f = [];
+  const tient = (55 + 3200 * Math.pow(b.s, 2.4)) * (0.7 + 0.6 * r()) * monde.tenue;      // la distance où il finit par manquer une liane ; plus courte dans les niveaux durs
   let t = 0, n = 0;
   for (let i = 0; i < 120 * 900 && !M.mort; i++) {
     if (M.x >= tient) st.fini = true;
@@ -59,7 +59,7 @@ export function etat(g, t, out) {
 
 // ---------- Le profil du joueur, gardé sur l'appareil ----------
 const CLE = 'liane-profil-2';
-export const profil = { elo: 800, skin: 'ombre', v: 0, d: 0, record: 0 };   // on démarre bas, face à des rivaux à sa portée, et on grimpe
+export const profil = { elo: 800, skin: 'ombre', v: 0, d: 0, record: 0, records: {}, monde: 0 };   // on démarre bas, face à des rivaux à sa portée, et on grimpe
 try { Object.assign(profil, JSON.parse(localStorage.getItem(CLE) || '{}')); } catch (e) { /* stockage indisponible : la partie ne sera pas gardée */ }
 export function garder() { try { localStorage.setItem(CLE, JSON.stringify(profil)); } catch (e) { /* rien */ } }
 
