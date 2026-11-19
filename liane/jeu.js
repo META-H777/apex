@@ -43,6 +43,7 @@ export const MONDES = [
   { id: 'aube', nom: 'Brume rose', x0: -60, pente: 650, ecart: [11.8, 13.8], alea: 6, serre: 0.2, bout: [2.4, 3], haut: 3.6, passage: [140, 60], arc: [0.26, 0.13, 0.08], nuit: [5.6, 12.6, 65, 0.004], tenue: 0.8 },
   { id: 'braise', nom: 'Braise', x0: -160, pente: 520, ecart: [12, 14], alea: 5.5, serre: 0.16, bout: [3.2, 3.2], haut: 3.4, passage: [105, 48], arc: [0.23, 0.14, 0.09], nuit: [6.4, 12.9, 55, 0.005], tenue: 0.62 },
   { id: 'lune', nom: 'Lune', x0: -300, pente: 450, ecart: [12, 14.2], alea: 6.5, serre: 0.22, bout: [2.8, 3.4], haut: 4.4, passage: [75, 36], arc: [0.2, 0.13, 0.09], nuit: [7.4, 13.1, 45, 0.005], tenue: 0.48 },
+  { id: 'essai', nom: 'Essai · tremplins', essai: true, x0: 40, pente: 800, ecart: [11.5, 13.4], alea: 5, serre: 0.14, bout: [2.4, 3.4], haut: 3.2, passage: [60, 45], arc: [0.3, 0.15, 0.09], nuit: [4.8, 12.3, 75, 0.004], tenue: 1 },
 ];
 // Les passages durs : des lianes qui demandent un lâcher précis. f vaut 1 au premier essai et baisse si la liane est refusée par les éclaireurs.
 const HAUTE = (r, k, f) => { const y = 14 + r() * 1.3 * f, L = 3.4 + r() * 1.2 + (1 - f) * 2.5; return { dx: 6.6 + r() * 1.8, y, bout: y - L }; };   // courte et haute : il faut arriver par en haut
@@ -50,6 +51,8 @@ const SAUT = (r, k, f) => ({ dx: 13.4 + (1.6 + 2.2 * k) * f + r() * 0.8, y: 13 +
 const SERREE = (r, k, f) => ({ dx: 7 + r() * 1.4, y: 13 + (r() - 0.5) * 2.6 * f, bout: 3 + r() * 4.4 * f });                                           // enfilade : trois lianes coup sur coup
 const MARCHE = (j) => (r, k, f) => ({ dx: 7.8 + r() * 1.6, y: 12.5 + j * 1.05 * f, bout: 5 + j * 1.4 * f + r() * 0.8 });                               // escalier : chaque liane plus haute et plus courte
 const PLONGEON = (r, k, f) => ({ dx: 6.4 + r() * 2.2 + (1 - f) * 2, y: 13 + (r() - 0.5), bout: 2.4 });                                                 // après une liane haute : on se laisse tomber sur une longue liane, et la chute devient de l'élan
+const TREMPLIN = (r, k, f) => ({ dx: 17.5 + r() * 3.5 * f, y: 13 + (r() - 0.5), bout: 2.4 + r(), tr: { ou: 0.48 + r() * 0.06, y: 1.3, w: 3.8 - 0.8 * k } });   // un vide infranchissable d'un seul saut, avec une feuille au milieu
+const MOTIFS_ESSAI = [[TREMPLIN], [TREMPLIN], [SERREE, TREMPLIN], [HAUTE, PLONGEON, TREMPLIN]];
 const MOTIFS = [[HAUTE, PLONGEON], [SAUT], [SERREE, SERREE, SERREE], [MARCHE(0), MARCHE(1), MARCHE(2), PLONGEON], [HAUTE, PLONGEON, HAUTE, PLONGEON], [SAUT, HAUTE, PLONGEON], [SERREE, SAUT]];
 // L'énergie de balancement que le singe entretient sur une corde de longueur R, selon ses crans d'élan.
 const cible = (R, chaine) => CFG.g * R * CFG.amp * (1 + CFG.elan * Math.min(chaine, CFG.crans));
@@ -114,6 +117,11 @@ export function pas(m, lianas, dt, ev) {
     m.vy -= C.g * dt;
     const sp = Math.hypot(m.vx, m.vy), k = 1 - C.drag * sp * dt; m.vx *= k; m.vy *= k;
     m.x += m.vx * dt; m.y += m.vy * dt;
+    // Un tremplin : une grande feuille tendue au-dessus des cimes. Le singe qui tombe dessus rebondit, d'autant plus haut qu'il arrive vite.
+    if (m.vy < 0 && m.y < 4) for (const li of lianas) {
+      const tr = li.tr; if (li.x - 40 > m.x) break; if (!tr || Math.abs(m.x - tr.x) > tr.w / 2) continue;
+      const pieds = m.y - 0.9; if (pieds <= tr.y && pieds - m.vy * dt > tr.y - 0.5) { m.y = tr.y + 0.9; m.vy = 14.5 - 0.22 * m.vy; m.vx = Math.max(m.vx, 7.5); if (ev) ev.push({ type: 'rebond', x: m.x, y: tr.y, tr }); }
+    }
     if (m.hold) { const li = saisissable(m, lianas); if (li) saisir(m, li, ev); }
     if (m.mode === 'fly' && m.y < C.sol - 1.2) { m.mort = 'chute'; if (ev) ev.push({ type: 'mort', cause: 'chute', x: m.x, y: m.y }); }
   }
@@ -190,12 +198,12 @@ export class Jeu {
   addLiana() {
     const r = this.r, d = this.d, prev = this.dernier, k = this.niv(prev.x), larg = this.larg(prev.x);
     // De loin en loin, un passage dur : une ou plusieurs lianes spéciales, tirées au hasard. De plus en plus souvent avec la distance.
-    if (!this.file.length && prev.x >= this.prochain) { this.file = MOTIFS[(r() * MOTIFS.length) | 0].slice(); this.prochain = prev.x + (d.passage[0] + (d.passage[1] - d.passage[0]) * k) * (0.6 + 0.8 * r()); }
+    if (!this.file.length && prev.x >= this.prochain) { const liste = d.essai ? MOTIFS_ESSAI : MOTIFS; this.file = liste[(r() * liste.length) | 0].slice(); this.prochain = prev.x + (d.passage[0] + (d.passage[1] - d.passage[0]) * k) * (0.6 + 0.8 * r()); }
     const moule = this.file.shift() || null;
     let arcs = null, li = null;
     for (let i = 0; i < 8 && !arcs; i++) {
       const f = 1 - i / 8, v = moule ? moule(r, k, f) : this.libre(k, f);    // à chaque refus des éclaireurs, on propose une liane moins extrême
-      li = this.liane(prev.x + v.dx, v.y, v.bout); li.dur = !!moule;
+      li = this.liane(prev.x + v.dx, v.y, v.bout); li.dur = !!moule; if (v.tr) li.tr = { x: prev.x + v.dx * v.tr.ou, y: v.tr.y, w: v.tr.w, ecrase: 0 };
       arcs = this.passable(moule ? Math.max(0.1, larg * 0.6) : larg); if (!arcs) { this.lianas.pop(); this.id--; }
     }
     if (arcs && moule) this.durs++;

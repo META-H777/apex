@@ -51,7 +51,7 @@ function majAccueil() {
   $('aPos').textContent = pos + (pos === 1 ? 'er' : 'e') + ' sur ' + cl.length;
   $('aSuite').textContent = r.suivant ? r.suivant[1] + ' à ' + r.suivant[0] : 'rang le plus haut';
   const i = MONDES.indexOf(monde), rec = (profil.records || {})[monde.id];
-  $('mNom').textContent = monde.nom; $('mInfo').textContent = 'niveau ' + (i + 1) + ' sur ' + MONDES.length + (rec ? ' · record ' + rec + ' m' : '');
+  $('mNom').textContent = monde.nom; $('mInfo').textContent = (monde.essai ? 'à l\'essai : des feuilles sur lesquelles on rebondit' : 'niveau ' + (i + 1) + ' sur ' + MONDES.filter((m) => !m.essai).length) + (rec ? ' · record ' + rec + ' m' : '');
 }
 function changerMonde(pas) {
   const i = (MONDES.indexOf(monde) + pas + MONDES.length) % MONDES.length; monde = MONDES[i]; profil.monde = i; garder();
@@ -231,6 +231,19 @@ function drawLianas() {
     }
   }
 }
+// Les tremplins (à l'essai) : une grande feuille sur sa tige, qui s'enfonce puis renvoie le singe.
+function drawTremplins(dt) {
+  const lis = Math.max(1.5, S * 0.035);
+  for (const li of jeu.lianas) {
+    const tr = li.tr; if (!tr) continue; const x = X(tr.x); if (x < -S * 4 || x > W + S * 4) continue;
+    tr.ecrase = Math.max(0, (tr.ecrase || 0) - dt * 3.5);
+    const y = Y(tr.y) + tr.ecrase * S * 0.4, w = tr.w * S / 2, h = S * (0.36 - 0.12 * tr.ecrase);
+    ctx.strokeStyle = PAL.ink; ctx.lineWidth = S * 0.17; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x - S * 0.6, y + S * 1.3, x + S * 0.2, Y(-1.6)); ctx.stroke();
+    ctx.fillStyle = PAL.rim; ctx.beginPath(); ctx.ellipse(x, y - lis * 1.5, w, h, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = PAL.ink; ctx.beginPath(); ctx.ellipse(x, y, w, h, 0, 0, TAU); ctx.fill();
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45; ctx.drawImage(D.dot, x - w * 1.1, y - h * 3.2, w * 2.2, h * 5); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+}
 // L'arc doré : la portion du balancement où il faut lâcher. Il s'éclaire quand les mains y passent.
 function drawArc() {
   if (M.mode !== 'swing' || !M.arc || M.mort || M.idle) { arcVu = null; return; }
@@ -273,6 +286,7 @@ function frame() {
   for (const e of jeu.events) {
     if (e.type === 'saisie') { burst(e.x, e.y + 1.5, 2, -1); if (aide < 9) { if (M.saisies >= 3) { aide = 9; taire(); } else dire('lâche dans l\'arc doré'); } }
     else if (e.type === 'lacher') { if (e.parfait) rings.push({ x: e.x, y: e.y, t: 0 }); if (aide < 9 && phase === 'course') dire('tiens pour attraper la liane'); }
+    else if (e.type === 'rebond') { e.tr.ecrase = 1; burst(e.x, e.y + 0.4, 6, 5); B.squash = 1; }
     else if (e.type === 'mort') { if (e.cause === 'chute') burst(e.x, 0.5, 14, 6); taire(); }
   }
   jeu.events.length = 0;
@@ -331,6 +345,7 @@ function frame() {
 
   // Le plan du jeu : le feuillage du haut, les lianes, le fantôme du rival, l'arc doré, le singe, la cime du bas.
   drawTile(ctx, D.top.c, D.TW, camX * S, D.top.y + camDy, W);
+  drawTremplins(dt);
   drawLianas();
   if (phase !== 'accueil' && G) {                        // le fantôme : il porte le skin de son joueur
     etat(G, t, Mg);
