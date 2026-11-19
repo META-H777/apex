@@ -20,7 +20,7 @@
   .maj { letter-spacing:.24em; text-transform:uppercase; }
   .ombre { text-shadow:0 1px 12px rgba(2,24,28,.8); }
   .txt { position:fixed; left:0; right:0; text-align:center; pointer-events:none; transition:opacity 1.2s; white-space:nowrap; }
-  #note { bottom:calc(var(--sb) + 7vh); font-size:min(2.6vw, 3.6vh, 14px); }
+  #note { bottom:calc(var(--sb) + 7vh); font-size:min(2.6vw, 3.6vh, 14px); transition:opacity .35s; }
   #tourne { top:calc(var(--st) + 14vh); font-size:min(2.6vw, 11px); opacity:.75; }
   #version { position:fixed; right:calc(var(--sr) + 2vw); bottom:calc(var(--sb) + 1.5vh); font-size:10px; letter-spacing:.08em; color:rgba(255,246,220,.35); pointer-events:none; }
   #chargement { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#041c1f; font-size:12px; transition:opacity .8s; pointer-events:none; }
@@ -43,15 +43,21 @@
   #hud .chrono { position:absolute; left:0; right:0; top:calc(var(--st) + 5.5vh); text-align:center; font-size:min(5.2vw, 8.5vh, 34px); letter-spacing:.04em; }
   #hud .qui { position:absolute; top:calc(var(--st) + 3.2vh); font-size:min(2.2vw, 3.3vh, 11px); opacity:.85; }
   #hMoi { left:calc(var(--sl) + 5vw); } #hLui { right:calc(var(--sr) + 5vw); }
-  #ecart { position:absolute; left:0; right:0; top:calc(var(--st) + 18vh); text-align:center; font-size:min(3.6vw, 6vh, 22px); opacity:0; transition:opacity .35s; }
+  #ecart { position:absolute; left:0; right:0; top:calc(var(--st) + 25vh); text-align:center; font-size:min(3.6vw, 6vh, 22px); opacity:0; transition:opacity .35s; }
   #ecart.on { opacity:1; } #ecart.avance { color:#d8f7c4; } #ecart.retard { color:#ffc9a8; }
+  /* Les crans d'élan : un point s'allume à chaque lâcher dans l'arc doré. */
+  #crans { position:absolute; left:0; right:0; top:calc(var(--st) + 5.5vh + min(5.2vw, 8.5vh, 34px) * 1.35); display:flex; justify-content:center; gap:9px; }
+  #crans i { width:7px; height:7px; border-radius:50%; box-shadow:0 0 0 1px rgba(255,246,220,.5); transition:background .25s, box-shadow .25s; }
+  #crans i.on { background:#ffd98a; box-shadow:0 0 10px rgba(255,214,120,.9); }
+  #nuit { position:absolute; left:calc(var(--sl) + 3vw); top:46%; font-size:min(2.2vw, 3.3vh, 11px); color:#cfe3ff; opacity:0; transition:opacity .4s; }
+  #nuit.on { opacity:.9; }
 
   /* Le résultat. */
   #fin { background:var(--nuit); -webkit-backdrop-filter:blur(5px); backdrop-filter:blur(5px); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1.4vh; text-align:center; }
   #fin.on { pointer-events:auto; }
   #fTitre { font-size:min(2.8vw, 4vh, 15px); color:#d8f7c4; } #fin.perdu #fTitre { color:#ffc9a8; }
   #fTemps { font-weight:200; font-size:min(14vw, 24vh, 104px); line-height:1; letter-spacing:.02em; }
-  #fLui, #fPlus { font-size:min(2.3vw, 3.4vh, 12px); opacity:.8; }
+  #fLui, #fPlus, #fCause { font-size:min(2.3vw, 3.4vh, 12px); opacity:.8; }
   #fElo { font-size:min(4.4vw, 7vh, 28px); margin-top:1vh; }
   #fin .boutons { display:flex; gap:6vw; margin-top:3.5vh; align-items:center; }
   #bSuivant { font-size:min(2.8vw, 4vh, 15px); padding:1.8vh 5vw; border:1px solid rgba(255,246,220,.7); border-radius:999px; }
@@ -82,7 +88,7 @@
 <div id="accueil" class="ecran ombre">
   <div class="bloc">
     <h1>LIANE</h1>
-    <div class="elo"><span id="aElo">1000</span><small class="maj" id="aRang">Bronze</small></div>
+    <div class="elo"><span id="aElo">800</span><small class="maj" id="aRang">Bronze</small></div>
     <div class="sous maj"><span id="aPos"></span> · <span id="aSuite"></span></div>
   </div>
   <div class="menu"><button class="lien maj" id="bClassement" data-ui>classement</button><button class="lien maj" id="bSkins" data-ui>skins</button></div>
@@ -91,14 +97,17 @@
 
 <div id="hud" class="ecran ombre">
   <div class="qui maj" id="hMoi"></div><div class="qui maj" id="hLui"></div>
-  <div class="chrono" id="chrono">0,00</div>
-  <div id="ecart"></div>
+  <div class="chrono" id="chrono">0 m</div>
+  <div id="crans"><i></i><i></i><i></i></div>
+  <div id="ecart" class="maj"></div>
+  <div id="nuit" class="maj"></div>
 </div>
 
 <div id="fin" class="ecran" data-ui>
   <div class="maj" id="fTitre"></div>
   <div id="fTemps"></div>
   <div class="maj" id="fLui"></div>
+  <div class="maj" id="fCause"></div>
   <div id="fElo"></div>
   <div class="maj" id="fPlus"></div>
   <div class="boutons"><button class="lien maj" id="bRevanche">revanche</button><button class="maj" id="bSuivant">rival suivant</button><button class="lien maj" id="bAccueil">accueil</button></div>
@@ -122,6 +131,6 @@
 <div id="note" class="txt maj ombre vu"></div>
 <div id="version"></div>
 <div id="chargement" class="maj">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=2"></script>
+<script type="module" src="main.js?v=3"></script>
 </body>
 </html>

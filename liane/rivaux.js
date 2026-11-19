@@ -1,17 +1,17 @@
 // LIANE — les rivaux, le classement Elo, les rangs et les skins.
+// Un duel : même forêt pour les deux, celui qui va le plus loin gagne.
 // Tant qu'il n'y a pas de serveur, les rivaux sont simulés : chacun a son niveau, court vraiment le parcours, et laisse un fantôme.
-import { Jeu, rnd } from './jeu.js?v=2';
+import { Jeu, rnd, pilote } from './jeu.js?v=3';
 
-export const FIN = 330;            // longueur d'une course, en mètres
 export const PARCOURS = [11, 23, 37, 41, 58, 64, 79, 86];   // les parcours du prototype : chaque numéro donne toujours la même forêt
 
 // ---------- Les skins : un habillage appliqué par le code (silhouette, liseré, traînée) ----------
 export const SKINS = [
   { id: 'ombre', nom: 'Ombre', seuil: 0, ink: '#04161a', rim: 'rgba(255,232,170,0.6)', trail: null },
-  { id: 'braise', nom: 'Braise', seuil: 1080, ink: '#1c0a05', rim: 'rgba(255,150,70,0.95)', trail: '255,140,60' },
-  { id: 'givre', nom: 'Givre', seuil: 1180, ink: '#062230', rim: 'rgba(170,235,255,0.95)', trail: '150,225,255' },
-  { id: 'jade', nom: 'Jade', seuil: 1300, ink: '#04241a', rim: 'rgba(140,255,190,0.9)', trail: '120,240,170' },
-  { id: 'or', nom: 'Or', seuil: 1450, ink: '#2b1d05', rim: 'rgba(255,224,130,1)', trail: '255,215,110' },
+  { id: 'braise', nom: 'Braise', seuil: 900, ink: '#1c0a05', rim: 'rgba(255,150,70,0.95)', trail: '255,140,60' },
+  { id: 'givre', nom: 'Givre', seuil: 1050, ink: '#062230', rim: 'rgba(170,235,255,0.95)', trail: '150,225,255' },
+  { id: 'jade', nom: 'Jade', seuil: 1200, ink: '#04241a', rim: 'rgba(140,255,190,0.9)', trail: '120,240,170' },
+  { id: 'or', nom: 'Or', seuil: 1400, ink: '#2b1d05', rim: 'rgba(255,224,130,1)', trail: '255,215,110' },
   { id: 'spectre', nom: 'Spectre', seuil: 1600, ink: 'rgba(238,248,255,0.94)', rim: 'rgba(255,255,255,0.5)', trail: '235,245,255' },
 ];
 export const skinById = (id) => SKINS.find((s) => s.id === id) || SKINS[0];
@@ -32,30 +32,22 @@ export const RIVAUX = (() => {
   return out.sort((a, b) => b.elo - a.elo);
 })();
 
-// La façon de jouer d'un rival : plus il est fort, plus il lâche tôt et juste, et moins il reste pendu.
-function piloter(jeu, b, st) {
-  const M = jeu.M;
-  if (M.mode === 'swing') {
-    if (M.idle) { if (M.om > 0 && M.th > 0.3) { jeu.setHold(true); jeu.setHold(false); } return; }
-    if (st.cible === undefined) st.cible = st.r() < 0.55 * (1 - b.s) * (1 - b.s) ? 9 : 0.95 - 0.5 * b.s + (st.r() - 0.5) * 0.5 * (1 - b.s);
-    if (st.cible < 9 && (M.th > st.cible || (M.th > 0.4 && M.R * M.om < 8))) { jeu.setHold(false); st.cible = undefined; }
-  } else { st.cible = undefined; if (M.air > 0.09 + 0.2 * (1 - b.s) && M.vy < 4) jeu.setHold(true); }
-}
-
 // Fait courir un rival sur un parcours et enregistre son fantôme, 30 fois par seconde, à partir de son premier lâcher.
+// Plus il est fort, plus il vise l'arc doré (donc plus il va vite et distance la nuit) et plus il tient longtemps avant de manquer une liane.
 const cache = new Map();
 export function fantome(parcours, b) {
   const key = parcours + ':' + b.id; if (cache.has(key)) return cache.get(key);
-  const jeu = new Jeu(parcours), M = jeu.M, st = { r: rnd(parcours * 1000 + b.id * 7 + 3) }, f = [];
-  let t = 0, n = 0, temps = 90;
-  for (let i = 0; i < 120 * 100; i++) {
-    piloter(jeu, b, st); const x0 = M.x; jeu.step(1 / 120); jeu.events.length = 0;
+  const jeu = new Jeu(parcours), M = jeu.M, r = rnd(parcours * 1000 + b.id * 7 + 3), st = { gout: 0.25 + 0.75 * b.s, r }, f = [];
+  const tient = (55 + 3200 * Math.pow(b.s, 2.4)) * (0.7 + 0.6 * r());      // la distance où il finit par manquer une liane
+  let t = 0, n = 0;
+  for (let i = 0; i < 120 * 900 && !M.mort; i++) {
+    if (M.x >= tient) st.fini = true;
+    pilote(jeu, st); jeu.step(1 / 120); jeu.events.length = 0;
     if (M.idle) continue;
-    if (n % 4 === 0) f.push(M.x, M.y, M.th, M.om, M.mode === 'swing' ? 1 : 0, M.li.x, M.li.y, M.vx, M.vy);
+    if (n % 4 === 0 || M.mort) f.push(M.x, M.y, M.th, M.om, M.mode === 'swing' ? 1 : 0, M.li.x, M.li.y, M.vx, M.vy);
     n++; t += 1 / 120;
-    if (M.x >= FIN) { temps = t - (1 / 120) * (M.x - FIN) / Math.max(1e-3, M.x - x0); break; }
   }
-  const g = { rival: b, temps, f: new Float32Array(f), n: f.length / 9 };
+  const g = { rival: b, dist: Math.max(0, M.x), temps: t, cause: M.mort || 'chute', f: new Float32Array(f), n: f.length / 9 };
   cache.set(key, g); return g;
 }
 // L'état du fantôme à l'instant t (en secondes depuis le départ), interpolé entre deux relevés.
@@ -64,12 +56,10 @@ export function etat(g, t, out) {
   out.x = L(0); out.y = L(1); out.th = L(2); out.om = L(3); out.mode = f[a + 4] > 0.5 ? 'swing' : 'fly'; out.ax = f[a + 5]; out.ay = f[a + 6]; out.vx = L(7); out.vy = L(8); out.fini = t >= g.temps;
   return out;
 }
-// L'instant où le fantôme passe à la distance x : sert aux écarts affichés en course.
-export function tempsA(g, x) { let lo = 0, hi = g.n - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (g.f[m * 9] < x) lo = m + 1; else hi = m; } return lo / 30; }
 
 // ---------- Le profil du joueur, gardé sur l'appareil ----------
-const CLE = 'liane-profil-1';
-export const profil = { elo: 1000, skin: 'ombre', v: 0, d: 0, record: {} };
+const CLE = 'liane-profil-2';
+export const profil = { elo: 800, skin: 'ombre', v: 0, d: 0, record: 0 };   // on démarre bas, face à des rivaux à sa portée, et on grimpe
 try { Object.assign(profil, JSON.parse(localStorage.getItem(CLE) || '{}')); } catch (e) { /* stockage indisponible : la partie ne sera pas gardée */ }
 export function garder() { try { localStorage.setItem(CLE, JSON.stringify(profil)); } catch (e) { /* rien */ } }
 

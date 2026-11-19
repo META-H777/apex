@@ -1,77 +1,85 @@
-// LIANE — le jeu : des duels chronométrés contre le fantôme d'un rival, un classement Elo, des skins.
-// Tenir pour s'accrocher, lâcher pour s'élancer. Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
-import { Jeu, CFG, rnd } from './jeu.js?v=2';
-import { buildDecor, drawTile, PAL } from './decor.js?v=2';
-import { FIN, PARCOURS, SKINS, skinById, rang, fantome, etat, tempsA, profil, garder, elo, adversaire, classement } from './rivaux.js?v=2';
+// LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des skins.
+// Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
+// Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
+import { Jeu, CFG, rnd, pilote } from './jeu.js?v=3';
+import { buildDecor, drawTile, PAL } from './decor.js?v=3';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, elo, adversaire, classement } from './rivaux.js?v=3';
 
-const VERSION = 'v0.1';
+const VERSION = 'v0.2';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const TAU = Math.PI * 2;
 const cv = $('ecran'), ctx = cv.getContext('2d', { alpha: false });
 const auto = params.get('auto');
+const OR = '255,214,120';
 
 // ---------- L'écran ----------
-let W = 0, H = 0, S = 1, baseY = 0, D = null, portrait = false, dpr = 1;
+let W = 0, H = 0, S = 1, baseY = 0, D = null, portrait = false, dpr = 1, qualite = 1, ancre = 0.44, vue = 0.44;
 function resize() {
-  dpr = Math.min(devicePixelRatio || 1, 2);
+  dpr = Math.max(1, Math.min(devicePixelRatio || 1, 2) * qualite);
   W = cv.width = Math.round(innerWidth * dpr); H = cv.height = Math.round(innerHeight * dpr);
   portrait = H > W * 1.1;
-  S = portrait ? W / 11.5 : H / 14;
-  baseY = portrait ? H - 2.6 * S : H - 0.95 * S;
+  S = portrait ? W / 14 : H / 14; ancre = portrait ? 0.24 : 0.44;       // téléphone debout : on recule, pour voir venir la liane suivante
+  baseY = portrait ? H - 3.4 * S : H - 0.95 * S;
   D = buildDecor(W, H, S, baseY, +(params.get('decor') || 7));
   $('tourne').classList.toggle('vu', !portrait); if (portrait) setTimeout(() => $('tourne').classList.add('vu'), 7000);
 }
 
 // ---------- L'état de la partie ----------
-let jeu, M, B, camX = 0, camLead = 3, camDy = 0, time = 0, last = performance.now() / 1000, acc = 0;
+let jeu, M, B, pil, camX = 0, camLead = 3, camDy = 0, time = 0, last = performance.now() / 1000;
 let phase = 'accueil';                 // accueil, course ou fin
-let parcours = PARCOURS[0], rival = null, G = null, Bg = null, t = 0, parti = false, passe = 0, ecartT = -9, tFin = 0, ignoreUp = false;
-const Mg = {}, trail = [];
-const X = (x) => (x - camX) * S + W * 0.44, Y = (y) => baseY - y * S + camDy;
+let parcours = PARCOURS[0], rival = null, G = null, Bg = null, t = 0, mortT = 0, depasse = false, ecartT = -9, ignoreUp = false;
+let aide = 9, arcVu = null, arcT = 0, cransVus = -1, distVue = -1, nuitVue = '', fluide = 0.016, mesureT = 0;
+const Mg = {}, trail = [], rings = [];
+const X = (x) => (x - camX) * S + W * vue, Y = (y) => baseY - y * S + camDy;
 const corps = () => ({ phi: -0.4, phiV: 0, kick: 0, kickV: 0, tuck: 0, squash: 0, tail: null });
-function scene(seed) { jeu = new Jeu(seed); M = jeu.M; B = corps(); camX = M.x + 3; camLead = 3; trail.length = 0; acc = 0; }
-const fmt = (s) => s.toFixed(2).replace('.', ',');
+function scene(seed, nuit) { jeu = new Jeu(seed, nuit); M = jeu.M; B = corps(); pil = { gout: 0.9 }; camX = M.x + 3; camLead = 3; trail.length = 0; rings.length = 0; mortT = 0; arcVu = null; }
+const dire = (txt) => { $('note').textContent = txt; $('note').classList.remove('vu'); };
+const taire = () => $('note').classList.add('vu');
+function majCrans(n) { if (n === cransVus) return; cransVus = n; const el = $('crans').children; for (let i = 0; i < el.length; i++) el[i].classList.toggle('on', i < n); }
 
 function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
   $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom;
   $('aPos').textContent = pos + (pos === 1 ? 'er' : 'e') + ' sur ' + cl.length;
-  $('aSuite').textContent = r.suivant ? r.suivant[1] + ' à ' + r.suivant[0] : 'rang le plus haut';
+  $('aSuite').textContent = (r.suivant ? r.suivant[1] + ' à ' + r.suivant[0] : 'rang le plus haut') + (profil.record ? ' · record ' + profil.record + ' m' : '');
 }
 function accueil() {
-  phase = 'accueil'; scene((Math.random() * 1e9) | 0); majAccueil();
+  phase = 'accueil'; scene((Math.random() * 1e9) | 0, false); majAccueil();
   for (const id of ['fin', 'hud', 'classement', 'skins']) $(id).classList.remove('on');
-  $('accueil').classList.add('on'); $('note').classList.add('vu');
+  $('accueil').classList.add('on'); taire();
 }
 function lancer(revanche) {
   if (!revanche || !rival) { parcours = PARCOURS[(Math.random() * PARCOURS.length) | 0]; rival = adversaire(profil.elo, rival); }
-  G = fantome(parcours, rival); Bg = corps(); scene(parcours);
-  phase = 'course'; t = 0; parti = false; passe = 0; ecartT = -9;
+  G = fantome(parcours, rival); Bg = corps(); scene(parcours, true);
+  phase = 'course'; t = 0; depasse = false; ecartT = -9; distVue = -1; nuitVue = ''; majCrans(0);
+  aide = profil.v + profil.d < 3 ? 0 : 9;                // les premières parties, le jeu dit quoi faire, liane après liane
   for (const id of ['accueil', 'fin', 'classement', 'skins']) $(id).classList.remove('on');
-  $('hud').classList.add('on'); $('chrono').textContent = '0,00'; $('ecart').className = '';
-  $('hMoi').textContent = 'toi · ' + profil.elo; $('hLui').textContent = rival.nom + ' · ' + rival.elo;
-  $('note').textContent = 'lâche pour partir'; $('note').classList.remove('vu');
+  $('hud').classList.add('on'); $('chrono').textContent = '0 m'; $('ecart').className = ''; $('nuit').classList.remove('on');
+  $('hMoi').textContent = 'toi · ' + profil.elo; $('hLui').textContent = rival.nom + ' · ' + Math.round(G.dist) + ' m';
+  dire(aide === 0 ? 'pose le doigt et tiens' : 'tiens, puis lâche dans l\'arc doré');
 }
+// La partie est finie : celui qui est allé le plus loin gagne.
 function finir() {
-  const gagne = tFin < G.temps, avant = profil.elo, d = elo(profil.elo, rival.elo, gagne), rAvant = rang(avant).nom;
+  const dist = Math.round(Math.max(0, M.x)), lui = Math.round(G.dist), gagne = dist > lui, avant = profil.elo, d = elo(profil.elo, rival.elo, gagne), rAvant = rang(avant).nom;
   profil.elo = Math.max(100, profil.elo + d); if (gagne) profil.v++; else profil.d++;
-  if (!profil.record[parcours] || tFin < profil.record[parcours]) profil.record[parcours] = +tFin.toFixed(3);
-  garder(); phase = 'fin'; $('note').classList.add('vu');
+  const rec = dist > (profil.record || 0); if (rec) profil.record = dist;
+  garder(); phase = 'fin'; taire();
   const skin = SKINS.find((s) => s.seuil > avant && s.seuil <= profil.elo), rAp = rang(profil.elo).nom;
   $('fTitre').textContent = gagne ? 'victoire' : 'défaite'; $('fin').classList.toggle('perdu', !gagne);
-  $('fTemps').textContent = fmt(tFin);
-  $('fLui').textContent = rival.nom + ' ' + fmt(G.temps) + ' · écart ' + (tFin - G.temps > 0 ? '+' : '−') + fmt(Math.abs(tFin - G.temps));
+  $('fTemps').textContent = dist + ' m';
+  $('fLui').textContent = rival.nom + ' ' + lui + ' m · écart ' + (dist - lui >= 0 ? '+' : '−') + Math.abs(dist - lui) + ' m';
+  $('fCause').textContent = (M.mort === 'nuit' ? 'rattrapé par la nuit' : 'tombé') + (rec ? ' · nouveau record' : ' · record ' + profil.record + ' m');
   $('fElo').textContent = avant + ' → ' + profil.elo + ' (' + (d >= 0 ? '+' : '−') + Math.abs(d) + ')';
   $('fPlus').textContent = skin ? 'nouveau skin : ' + skin.nom : rAp !== rAvant ? 'nouveau rang : ' + rAp : rang(profil.elo).nom;
-  $('hud').classList.remove('on'); setTimeout(() => { if (phase === 'fin') $('fin').classList.add('on'); }, 500);
+  $('hud').classList.remove('on'); $('fin').classList.add('on');
 }
 
 // ---------- Les commandes : un seul doigt ----------
 function hold(h) {
-  if (phase !== 'course') return;
-  if (h) $('note').classList.add('vu');
+  if (phase !== 'course' || M.mort) return;
+  if (h && M.idle) { if (aide === 0) { aide = 1; dire('lâche dans l\'arc doré'); } else taire(); }
   jeu.setHold(h);
 }
 const ui = (e) => e.target.closest && e.target.closest('[data-ui]');
@@ -83,7 +91,7 @@ addEventListener('pointerdown', (e) => {
 addEventListener('pointerup', (e) => { if (ignoreUp) { ignoreUp = false; return; } if (!ui(e)) hold(false); });
 addEventListener('pointercancel', () => hold(false));
 addEventListener('contextmenu', (e) => e.preventDefault());
-addEventListener('keydown', (e) => { if (e.code !== 'Space' || e.repeat) return; e.preventDefault(); if (phase === 'accueil') lancer(false); else if (phase === 'fin') lancer(false); else hold(true); });
+addEventListener('keydown', (e) => { if (e.code !== 'Space' || e.repeat) return; e.preventDefault(); if (phase === 'accueil') lancer(false); else if (phase === 'fin') lancer(true); else hold(true); });
 addEventListener('keyup', (e) => { if (e.code === 'Space') hold(false); });
 const clic = (id, fn) => $(id).addEventListener('click', (e) => { e.stopPropagation(); fn(); });
 clic('bSuivant', () => lancer(false)); clic('bRevanche', () => lancer(true)); clic('bAccueil', accueil);
@@ -170,8 +178,8 @@ function drawLianas() {
   ctx.strokeStyle = ctx.fillStyle = PAL.ink; ctx.lineCap = 'round';
   for (const li of jeu.lianas) {
     const ax = X(li.x); if (ax < -S * 12 || ax > W + S * 12) continue;
-    const ay = Y(li.y); let ex, ey, cx, cy; const r = rnd(li.seed);
-    if (li.held) {            // tendue jusqu'aux mains, le reste pend et traîne
+    const ay = Y(li.y), tenue = M.mode === 'swing' && li === M.li; let ex, ey, cx, cy; const r = rnd(li.seed);
+    if (tenue) {              // tendue jusqu'aux mains, le reste pend et traîne
       const hx = X(M.x), hy = Y(M.y), rem = Math.max(0, li.L - M.R);
       li.ta = (li.ta ?? M.th) + ((M.th * 0.5 - clamp(M.om * 0.16, -0.6, 0.6)) - (li.ta ?? M.th)) * 0.18;   // le bout libre pend surtout vers le bas
       ex = hx + Math.sin(li.ta) * rem * S; ey = hy + Math.cos(li.ta) * rem * S;
@@ -186,11 +194,21 @@ function drawLianas() {
     ctx.beginPath();          // quelques feuilles le long de la liane
     for (let i = 0; i < 5; i++) {
       const tt = 0.2 + 0.72 * (i + r()) / 5, side = i % 2 ? 1 : -1, lx = (1 - tt) * (1 - tt) * ax + 2 * (1 - tt) * tt * cx + tt * tt * ex, ly = (1 - tt) * (1 - tt) * ay + 2 * (1 - tt) * tt * cy + tt * tt * ey;
-      const sz = S * (0.16 + r() * 0.1), an = (li.held ? M.th : li.a) * -1 + side * (0.9 + r() * 0.4) + Math.PI / 2;
+      const sz = S * (0.16 + r() * 0.1), an = (tenue ? M.th : li.a) * -1 + side * (0.9 + r() * 0.4) + Math.PI / 2;
       ctx.moveTo(lx, ly); ctx.ellipse(lx + Math.cos(an) * sz, ly + Math.sin(an) * sz, sz, sz * 0.42, an, 0, TAU);
     }
     ctx.fill();
   }
+}
+// L'arc doré : la portion du balancement où il faut lâcher. Il s'éclaire quand les mains y passent.
+function drawArc() {
+  if (M.mode !== 'swing' || !M.arc || M.mort || M.idle) { arcVu = null; return; }
+  if (M.arc !== arcVu) { arcVu = M.arc; arcT = time; }
+  const a = M.arc, k = clamp((time - arcT) / 0.14, 0, 1), dedans = M.om > 0 && M.th >= a[0] && M.th <= a[1], ax = X(M.li.x), ay = Y(M.li.y), r = M.R * S;
+  ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+  ctx.strokeStyle = `rgba(255,190,90,${(dedans ? 0.3 : 0.16) * k})`; ctx.lineWidth = S * 0.6; ctx.beginPath(); ctx.arc(ax, ay, r, Math.PI / 2 - a[1], Math.PI / 2 - a[0]); ctx.stroke();
+  ctx.strokeStyle = `rgba(255,232,170,${(dedans ? 1 : 0.72) * k})`; ctx.lineWidth = S * 0.16; ctx.beginPath(); ctx.arc(ax, ay, r, Math.PI / 2 - a[1], Math.PI / 2 - a[0]); ctx.stroke();
+  ctx.globalCompositeOperation = 'source-over';
 }
 
 // ---------- La vie autour : lucioles, feuilles arrachées, oiseaux au loin, feuilles floues tout près ----------
@@ -199,40 +217,56 @@ const bits = [];
 function burst(x, y, n, up) { for (let i = 0; i < n; i++) bits.push({ x: x + (Math.random() - 0.5) * 1.6, y, vx: M.vx * 0.35 + (Math.random() - 0.5) * 5, vy: up * (0.4 + Math.random() * 0.9), a: Math.random() * TAU, av: (Math.random() - 0.5) * 9, life: 1.1 + Math.random() * 0.7, s: 0.1 + Math.random() * 0.12 }); }
 const birds = { x: -999, y: 0, t: 6 };
 const nears = [0, 1, 2].map((k) => ({ k, x: -999, top: false, s: 1, rot: 0 }));
-// Un faisceau de lumière vertical : l'arrivée, et plus discrètement les deux passages intermédiaires.
+// Un faisceau de lumière vertical : il marque l'endroit où le rival s'est arrêté.
 function faisceau(x, a, w) {
-  const sx = X(x); if (sx < -S * 3 || sx > W + S * 3) return;
+  const sx = X(x); if (sx < -S * 3 || sx > W + S * 3) return false;
   const g = ctx.createLinearGradient(sx - w * S, 0, sx + w * S, 0); g.addColorStop(0, `rgba(${PAL.glow},0)`); g.addColorStop(0.5, `rgba(${PAL.glow},${a})`); g.addColorStop(1, `rgba(${PAL.glow},0)`);
   ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.fillRect(sx - w * S, 0, w * S * 2, H); ctx.globalCompositeOperation = 'source-over';
+  return true;
 }
 
 function frame() {
   requestAnimationFrame(frame);
-  const tn = performance.now() / 1000, real = Math.min(0.25, tn - last); last = tn; time += real; acc += real;
-  const paused = window.LIANE.pause; if (paused) acc = 0;
-  while (acc >= 1 / 120) {
-    if (phase !== 'course' || auto) jeu.autopilot('bon');          // hors course, le singe joue tout seul
-    const x0 = M.x; jeu.step(1 / 120); acc -= 1 / 120;
-    if (phase === 'course' && !M.idle) {
-      if (!parti) { parti = true; $('note').classList.add('vu'); } t += 1 / 120;
-      if (M.x >= FIN) { tFin = t - (1 / 120) * (M.x - FIN) / Math.max(1e-3, M.x - x0); finir(); }
-      else if (passe < 2 && M.x >= FIN * (passe + 1) / 3) {       // passage intermédiaire : l'écart avec le rival
-        passe++; const d = t - tempsA(G, FIN * passe / 3);
-        $('ecart').textContent = (d > 0 ? '+' : '−') + fmt(Math.abs(d)); $('ecart').className = 'on ' + (d > 0 ? 'retard' : 'avance'); ecartT = time;
-      }
+  const tn = performance.now() / 1000, brut = tn - last, real = Math.min(0.05, brut); last = tn; time += real;
+  const paused = window.LIANE.pause;
+  // Le mouvement avance du temps réellement écoulé, découpé en pas courts : l'image suit le doigt sans à-coup.
+  if (!paused) {
+    const n = Math.max(1, Math.ceil(real * 120 - 1e-6)), h = real / n;
+    for (let i = 0; i < n && !M.mort; i++) {
+      if (phase !== 'course' || auto) pilote(jeu, pil);            // hors course, le singe joue tout seul
+      jeu.step(h);
+      if (phase === 'course' && !M.idle && !M.mort) t += h;
+      if (window.LIANE.stop && window.LIANE.stop(M)) { window.LIANE.pause = true; break; }
     }
-    if (window.LIANE.stop && window.LIANE.stop(M)) { window.LIANE.pause = true; acc = 0; }
   }
-  for (const e of jeu.events) { if (e.type === 'bounce') { burst(e.x, e.y, 9, 7); B.squash = 1; } else if (e.type === 'grab') burst(e.x, e.y + 1.5, 2, -1); }
+  for (const e of jeu.events) {
+    if (e.type === 'saisie') { burst(e.x, e.y + 1.5, 2, -1); if (aide < 9) { if (M.saisies >= 3) { aide = 9; taire(); } else dire('lâche dans l\'arc doré'); } }
+    else if (e.type === 'lacher') { if (e.parfait) rings.push({ x: e.x, y: e.y, t: 0 }); if (aide < 9 && phase === 'course') dire('tiens pour attraper la liane'); }
+    else if (e.type === 'mort') { if (e.cause === 'chute') burst(e.x, 0.5, 14, 6); taire(); }
+  }
   jeu.events.length = 0;
-  const dt = Math.min(0.05, real), skin = skinById(profil.skin);
-  if (phase === 'course') { $('chrono').textContent = fmt(t); if (ecartT > 0 && time - ecartT > 1.8) { $('ecart').className = ''; ecartT = -9; } }
-  if (auto) { if (phase === 'accueil' && time > 2) lancer(false); else if (phase === 'fin' && $('fin').classList.contains('on') && !window.LIANE.attente) { window.LIANE.attente = setTimeout(() => { window.LIANE.attente = 0; if (phase === 'fin') lancer(false); }, 2500); } }
+  const dt = paused ? 0 : real, skin = skinById(profil.skin);
+  if (M.mort && !mortT) mortT = time;
+  if (mortT && phase === 'course' && time - mortT > 0.9) finir();
+  if (mortT && phase === 'accueil' && time - mortT > 1.2) scene((Math.random() * 1e9) | 0, false);
+  if (phase === 'course') {
+    const d = Math.max(0, Math.round(M.x)); if (d !== distVue) { distVue = d; $('chrono').textContent = d + ' m'; }
+    majCrans(M.chaine);
+    if (!depasse && M.x > G.dist) { depasse = true; $('ecart').textContent = rival.nom + ' dépassé'; $('ecart').className = 'on avance'; ecartT = time; }
+    if (ecartT > 0 && time - ecartT > 2.4) { $('ecart').className = ''; ecartT = -9; }
+    const dn = M.x - jeu.nuit.x, txt = !M.idle && dn < 22 ? 'la nuit · ' + Math.max(0, Math.round(dn)) + ' m' : '';
+    if (txt !== nuitVue) { nuitVue = txt; if (txt) $('nuit').textContent = txt; $('nuit').classList.toggle('on', !!txt); }
+  }
+  if (auto) { if (phase === 'accueil' && time > 2) lancer(false); else if (phase === 'fin' && !window.LIANE.attente) { window.LIANE.attente = setTimeout(() => { window.LIANE.attente = 0; if (phase === 'fin') lancer(false); }, 2500); } }
+  // Si l'appareil peine, on baisse la finesse de l'image plutôt que la fluidité. Jamais pendant une course.
+  if (brut < 0.25) fluide += (brut - fluide) * 0.05;
+  if (phase !== 'course' && !params.get('net') && time - mesureT > 3 && fluide > 0.022 && dpr > 1) { qualite = Math.max(0.75, qualite - 0.25); mesureT = time; fluide = 0.016; resize(); }
 
-  // La caméra devance le singe d'autant plus qu'il va vite, et suit à peine sa hauteur.
+  // La caméra devance le singe d'autant plus qu'il va vite, et suit à peine sa hauteur. À l'accueil, elle le décale à droite du titre.
+  vue += ((phase === 'accueil' && !portrait ? 0.66 : ancre) - vue) * Math.min(1, real * 3);
   camLead += (clamp(M.vx * 0.32, 1.5, 6.5) - camLead) * Math.min(1, dt * 1.6);
   camX += (M.x + camLead - camX) * Math.min(1, dt * 7);
-  camDy += ((M.y - 6) * S * 0.16 - camDy) * Math.min(1, dt * 2.5);
+  camDy += ((Math.max(M.y, 0) - 6) * S * 0.16 - camDy) * Math.min(1, dt * 2.5);
 
   // Le ciel, puis les plans de forêt avec leurs nappes de brume, puis les rayons.
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
@@ -258,32 +292,47 @@ function frame() {
     const sz = S * 0.34 * f.s * (0.6 + f.par * 0.5); ctx.globalAlpha = a * 0.85; ctx.drawImage(D.dot, fx - sz, fy - sz, sz * 2, sz * 2);
   }
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
-  if (phase !== 'accueil') { faisceau(FIN / 3, 0.1, 0.5); faisceau(FIN * 2 / 3, 0.1, 0.5); faisceau(FIN, 0.42, 1.3); }
+  // Le repère du rival : un faisceau à l'endroit où il s'est arrêté. Le dépasser, c'est gagner.
+  if (phase !== 'accueil' && G && faisceau(G.dist, 0.34, 1.1)) {
+    ctx.globalAlpha = 0.85; ctx.fillStyle = '#fff6dc'; ctx.font = `300 ${Math.round(11 * dpr)}px Jost, sans-serif`; ctx.textAlign = 'center';
+    ctx.fillText(rival.nom.toUpperCase() + '  ·  ' + Math.round(G.dist) + ' M', X(G.dist), H * 0.3); ctx.globalAlpha = 1;
+  }
 
-  // Le plan du jeu : le feuillage du haut, les lianes, le fantôme du rival, le singe, la cime du bas.
+  // Le plan du jeu : le feuillage du haut, les lianes, le fantôme du rival, l'arc doré, le singe, la cime du bas.
   drawTile(ctx, D.top.c, D.TW, camX * S, D.top.y + camDy, W);
   drawLianas();
   if (phase !== 'accueil' && G) {                        // le fantôme : il porte le skin de son joueur
-    etat(G, parti ? t : 0, Mg);
-    if (!Mg.fini || phase === 'course') {
-      const gs = skinById(rival.skin), gp = poseMonkey(Mg, Bg, paused ? 0 : dt);
+    etat(G, t, Mg);
+    if (!Mg.fini) {
+      const gs = skinById(rival.skin), gp = poseMonkey(Mg, Bg, dt);
       ctx.globalAlpha = 0.42;
       if (Mg.mode === 'swing') { ctx.strokeStyle = PAL.ink; ctx.lineWidth = S * 0.06; ctx.beginPath(); ctx.moveTo(X(Mg.ax), Y(Mg.ay)); ctx.lineTo(X(Mg.x), Y(Mg.y)); ctx.stroke(); }
       if (gs.trail) { ctx.save(); ctx.translate(Math.max(1.5, S * 0.03), -Math.max(1.5, S * 0.03)); drawMonkey(gp, gs.rim); ctx.restore(); }
       drawMonkey(gp, gs.ink);
-      ctx.globalAlpha = 0.7; ctx.fillStyle = '#fff6dc'; ctx.font = `300 ${Math.round(11 * dpr)}px Jost, sans-serif`; ctx.textAlign = 'center'; ctx.fillText(rival.nom, X(Mg.x), Y(Mg.y) - S * 0.6);
+      if (Math.abs(Mg.x - M.x) > 2.5) { ctx.globalAlpha = 0.7; ctx.fillStyle = '#fff6dc'; ctx.font = `300 ${Math.round(11 * dpr)}px Jost, sans-serif`; ctx.textAlign = 'center'; ctx.fillText(rival.nom, X(Mg.x), Y(Mg.y) - S * 0.6); }
       ctx.globalAlpha = 1;
     }
   }
-  // Le singe du joueur : sa traînée s'il en a une, un liseré de lumière, puis la silhouette.
-  const pose = poseMonkey(M, B, paused ? 0 : dt), o = Math.max(1.5, S * 0.03);
-  if (skin.trail) {
-    trail.push(pose.hx, pose.hy); if (trail.length > 44) trail.splice(0, 2);
+  drawArc();
+  // Le singe du joueur : sa traînée (celle de son skin, ou l'or de l'élan), un liseré de lumière, puis la silhouette.
+  const pose = poseMonkey(M, B, dt), o = Math.max(1.5, S * 0.03), tc = skin.trail || (M.chaine > 0 ? OR : null);
+  if (tc) {
+    const long = 2 * (22 + 9 * M.chaine), fort = skin.trail ? 0.4 + 0.15 * M.chaine : 0.2 + 0.2 * M.chaine;
+    trail.push(pose.hx, pose.hy); while (trail.length > long) trail.splice(0, 2);
     ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
-    for (let i = 2; i < trail.length; i += 2) { const k = i / trail.length; ctx.strokeStyle = `rgba(${skin.trail},${0.5 * k * k})`; ctx.lineWidth = S * 0.26 * k; ctx.beginPath(); ctx.moveTo(X(trail[i - 2]), Y(trail[i - 1])); ctx.lineTo(X(trail[i]), Y(trail[i + 1])); ctx.stroke(); }
+    for (let i = 2; i < trail.length; i += 2) { const k = i / trail.length; ctx.strokeStyle = `rgba(${tc},${fort * k * k})`; ctx.lineWidth = S * 0.26 * k; ctx.beginPath(); ctx.moveTo(X(trail[i - 2]), Y(trail[i - 1])); ctx.lineTo(X(trail[i]), Y(trail[i + 1])); ctx.stroke(); }
     ctx.globalCompositeOperation = 'source-over';
-  } else trail.length = 0;
+  } else if (trail.length) trail.splice(0, 4);
   ctx.save(); ctx.translate(o, -o); drawMonkey(pose, skin.rim); ctx.restore(); drawMonkey(pose, skin.ink);
+  // Un lâcher dans l'arc doré : un anneau de lumière s'ouvre, une seule fois.
+  if (rings.length) {
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = rings.length - 1; i >= 0; i--) {
+      const r = rings[i]; r.t += dt; const k = r.t / 0.5; if (k >= 1) { rings.splice(i, 1); continue; }
+      ctx.strokeStyle = `rgba(255,232,170,${0.9 * (1 - k) * (1 - k)})`; ctx.lineWidth = Math.max(1, S * 0.09 * (1 - k)); ctx.beginPath(); ctx.arc(X(r.x), Y(r.y), S * (0.5 + 2.6 * k), 0, TAU); ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
   ctx.fillStyle = PAL.ink;
   for (let i = bits.length - 1; i >= 0; i--) {
     const b = bits[i]; b.life -= dt; if (b.life <= 0) { bits.splice(i, 1); continue; }
@@ -294,27 +343,37 @@ function frame() {
   drawTile(ctx, D.floor.c, D.TW, camX * S, D.floor.y + camDy, W);
   ctx.fillStyle = PAL.play.bot; ctx.fillRect(0, D.floor.y + D.floor.h + camDy - 1, W, H);
 
+  // La nuit : un voile sombre qui avance depuis la gauche. Quand il touche le singe, c'est fini.
+  if (jeu.nuit.on) {
+    const nx = X(jeu.nuit.x + (M.mort === 'nuit' ? (time - mortT) * 16 : 0)), w = 15 * S;
+    if (nx + w > 0) {
+      if (nx > 0) { ctx.fillStyle = '#020a14'; ctx.fillRect(0, 0, nx + 1, H); }
+      const x0 = Math.max(0, nx), g = ctx.createLinearGradient(nx, 0, nx + w, 0); g.addColorStop(0, 'rgba(2,10,20,1)'); g.addColorStop(0.25, 'rgba(3,12,32,0.86)'); g.addColorStop(0.6, 'rgba(6,18,48,0.45)'); g.addColorStop(1, 'rgba(8,22,56,0)');
+      ctx.fillStyle = g; ctx.fillRect(x0, 0, nx + w - x0, H);
+    }
+  }
+
   // Tout près de l'objectif, de grandes feuilles floues passent vite : c'est elles qui donnent la vitesse.
   for (const n of nears) {
-    const sx = (n.x - camX) * S * 2.1 + W * 0.44;
+    const sx = (n.x - camX) * S * 2.1 + W * vue;
     if (sx < -S * 9 || sx > W * 3) { n.x = camX + (W * 0.9 / S + 6 + Math.random() * 16) / 2.1; n.top = Math.random() < 0.45; n.s = S * (3.6 + Math.random() * 2.4); n.rot = (Math.random() - 0.5) * 0.7; continue; }
     ctx.save(); ctx.translate(sx, n.top ? -n.s * 0.3 : H + n.s * 0.3); ctx.rotate(n.rot + (n.top ? Math.PI : 0)); ctx.globalAlpha = 0.92; ctx.drawImage(D.near[n.k], -n.s / 2, -n.s, n.s, n.s); ctx.restore();
   }
   ctx.globalAlpha = 1;
   ctx.drawImage(D.vig, 0, 0, W, H);
 
-  // En course : une ligne fine en haut de l'écran, avec ta position et celle du rival.
+  // En course : une ligne fine en haut de l'écran, de ton départ jusqu'au repère du rival.
   if (phase === 'course') {
-    const x0 = W * 0.3, x1 = W * 0.7, y = Math.round(9 * dpr), p = (v) => x0 + (x1 - x0) * clamp(v / FIN, 0, 1);
-    ctx.strokeStyle = 'rgba(255,246,220,0.35)'; ctx.lineWidth = dpr; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,246,220,0.85)'; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.arc(p(Mg.x || 0), y, 3.5 * dpr, 0, TAU); ctx.stroke();
+    const x0 = W * 0.3, x1 = W * 0.7, y = Math.round(9 * dpr), fin = Math.max(60, G.dist), p = (v) => x0 + (x1 - x0) * clamp(v / fin, 0, 1);
+    ctx.strokeStyle = 'rgba(255,246,220,0.35)'; ctx.lineWidth = dpr; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.moveTo(x1, y - 4 * dpr); ctx.lineTo(x1, y + 4 * dpr); ctx.stroke();
+    if (!Mg.fini) { ctx.strokeStyle = 'rgba(255,246,220,0.85)'; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.arc(p(Mg.x || 0), y, 3.5 * dpr, 0, TAU); ctx.stroke(); }
     ctx.fillStyle = skin.trail ? `rgb(${skin.trail})` : '#fff6dc'; ctx.beginPath(); ctx.arc(p(M.x), y, 3.5 * dpr, 0, TAU); ctx.fill();
   }
 }
 
 addEventListener('resize', resize); resize();
 $('version').textContent = VERSION;
-window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, profil, CFG, lancer, accueil, pause: false, stop: null, attente: 0 };   // pour les mises au point
+window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get image() { return { dpr, qualite, fluide }; }, profil, CFG, lancer, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
 accueil();
 $('chargement').classList.add('vu');
 frame();
