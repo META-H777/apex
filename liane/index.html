@@ -82,6 +82,28 @@
   #cListe .n { flex:1; text-align:left; } #cListe .r { opacity:.6; font-size:.82em; } #cListe .e { width:16%; text-align:right; }
   #sListe { display:grid; grid-template-columns:repeat(6, 1fr); gap:2.2vw; width:min(100%, 760px); margin-top:3vh; }
   @media (orientation:portrait) { #sListe { grid-template-columns:repeat(3, 1fr); gap:5vw; } }
+  /* Téléphone tenu debout : le jeu est une bande au milieu ; les textes prennent la place libre au-dessus et en dessous, en plus gros. */
+  @media (orientation:portrait) {
+    #hud .chrono { font-size:10vw; top:calc(var(--st) + 7vh); }
+    #hud .qui { font-size:3vw; top:calc(var(--st) + 3.6vh); }
+    #crans { top:calc(var(--st) + 7vh + 13.5vw); }
+    #ecart { font-size:5vw; top:calc(var(--st) + 21vh); }
+    #nuit { font-size:3vw; top:auto; bottom:calc(var(--sb) + 24vh); }
+    #note { font-size:3.6vw; bottom:calc(var(--sb) + 11vh); }
+    #accueil .bloc { top:calc(var(--st) + 5vh); transform:none; }
+    #accueil h1 { font-size:15vw; }
+    #accueil .elo { margin-top:1.6vh; font-size:8vw; }
+    #accueil .sous { font-size:3vw; }
+    #accueil .mondes { margin-top:1.4vh; gap:3vw; }
+    .mondes button { font-size:7vw; padding:1vh 3vw; } .mondes b { font-size:4vw; }
+    #mInfo { font-size:3vw; }
+    #accueil .go { font-size:4vw; bottom:calc(var(--sb) + 9vh); }
+    #accueil .menu { top:auto; right:0; left:0; bottom:calc(var(--sb) + 16vh); justify-content:center; gap:12vw; }
+    .lien { font-size:3.4vw; }
+    #fTitre { font-size:4.2vw; } #fTemps { font-size:20vw; } #fLui, #fPlus, #fCause { font-size:3.2vw; } #fElo { font-size:6.5vw; }
+    #fin .boutons { flex-wrap:wrap; justify-content:center; gap:3vh 5vw; } #bSuivant, #bRevanche { font-size:4vw; padding:1.6vh 7vw; }
+    .panneau h2 { font-size:4vw; } #cListe li { font-size:3.6vw; }
+  }
   .skin { display:flex; flex-direction:column; align-items:center; gap:1.6vh; padding:2.4vh 0; border:1px solid rgba(255,246,220,.14); border-radius:10px; }
   .skin i { width:min(5vw, 9vh, 40px); height:min(5vw, 9vh, 40px); border-radius:50%; }
   .skin b { font-weight:300; font-size:min(2.4vw, 3.6vh, 13px); letter-spacing:.14em; text-transform:uppercase; }
@@ -140,6 +162,6 @@
 <div id="note" class="txt maj ombre vu"></div>
 <div id="version"></div>
 <div id="chargement" class="maj">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=7"></script>
+<script type="module" src="main.js?v=8"></script>
 </body>
 </html>

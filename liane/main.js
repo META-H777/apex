@@ -1,12 +1,12 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des skins.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=7';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=7';
-import { corps, poseSinge, dessinerSinge, PERCHE } from './singe.js?v=7';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=7';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=8';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=8';
+import { corps, poseSinge, dessinerSinge, PERCHE } from './singe.js?v=8';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=8';
 
-const VERSION = 'v0.5';
+const VERSION = 'v0.5.1';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -27,13 +27,13 @@ function resize() {
   dpr = Math.max(1, Math.min(devicePixelRatio || 1, 2) * qualite);
   W = cv.width = Math.round(innerWidth * dpr); H = cv.height = Math.round(innerHeight * dpr);
   portrait = H > W * 1.1;
-  S = portrait ? W / 14 : H / 14; ancre = portrait ? 0.4 : 0.44;       // téléphone debout : on recule, pour voir venir la liane suivante
-  baseY = portrait ? H - 3.4 * S : H - 0.95 * S;
+  // Le singe est tenu au milieu de l'écran, et l'on voit toujours la liane qui vient.
+  // Téléphone debout : on recule (22 m de large), et le jeu occupe une bande au milieu, entre le feuillage du haut et les cimes du bas.
+  if (portrait) { S = Math.min(W / 22, H / 24); baseY = Math.round(H * 0.5 + 6.6 * S); ancre = 0.41; } else { S = H / 14; baseY = H - 0.95 * S; ancre = 0.47; }
   liberer(D); D = buildDecor(W, H, S, baseY, +(params.get('decor') || 7));
-  $('tourne').classList.toggle('vu', !portrait); clearTimeout(tourneT); if (portrait) tourneT = setTimeout(() => $('tourne').classList.add('vu'), 7000);
+  $('tourne').classList.add('vu');                       // le jeu se joue maintenant aussi bien debout que couché
 }
 // Les images de l'ancien décor sont vidées tout de suite : sur téléphone, la mémoire des images est comptée, et la dépasser recharge la page.
-let tourneT = 0;
 function liberer(d, vu = new Set()) { if (!d || typeof d !== 'object' || vu.has(d)) return; vu.add(d); if (typeof d.getContext === 'function') { d.width = d.height = 0; return; } for (const k in d) liberer(d[k], vu); }
 
 // ---------- L'état de la partie ----------
@@ -291,7 +291,7 @@ function frame() {
 
   // La caméra devance le singe d'autant plus qu'il va vite, et suit à peine sa hauteur. À l'accueil, elle le décale à droite du titre.
   vue += ((phase === 'accueil' && !portrait ? 0.66 : ancre) - vue) * Math.min(1, real * 3);
-  camLead += (clamp(M.vx * 0.32, 1.5, portrait ? 2 : 6.5) - camLead) * Math.min(1, dt * 1.6);   // téléphone debout : la caméra devance moins, pour garder tout le singe à l'image
+  camLead += (clamp(M.vx * 0.16, 0.5, portrait ? 1.6 : 2.6) - camLead) * Math.min(1, dt * 1.6);   // elle le devance à peine : juste de quoi compenser son retard, pour qu'il reste au milieu
   camX += (M.x + camLead - camX) * Math.min(1, dt * 7);
   camDy += ((Math.max(M.y, 0) - 6) * S * 0.3 - camDy) * Math.min(1, dt * 2.5);
 
@@ -322,11 +322,12 @@ function frame() {
   // Le repère du rival : un faisceau à l'endroit où il s'est arrêté. Le dépasser, c'est gagner.
   if (phase !== 'accueil' && G && (parti || phase === 'fin') && faisceau(G.dist, 0.34, 1.1)) {
     ctx.globalAlpha = 0.85; ctx.fillStyle = '#fff6dc'; ctx.font = `300 ${Math.round(11 * dpr)}px Jost, sans-serif`; ctx.textAlign = 'center';
-    ctx.fillText(rival.nom.toUpperCase() + '  ·  ' + Math.round(G.dist) + ' M', X(G.dist), H * 0.3); ctx.globalAlpha = 1;
+    ctx.fillText(rival.nom.toUpperCase() + '  ·  ' + Math.round(G.dist) + ' M', X(G.dist), Y(9.8)); ctx.globalAlpha = 1;
   }
 
   // Le plan du jeu : le feuillage du haut, les lianes, le fantôme du rival, l'arc doré, le singe, la cime du bas.
   drawTile(ctx, D.top.c, D.TW, camX * S, D.top.y + camDy, W);
+  if (D.top.y + camDy > -S * 2) { ctx.fillStyle = PAL.play.bot; ctx.fillRect(0, 0, W, Math.ceil(D.top.y + camDy + S * 2)); }      // au-dessus : l'épaisseur du feuillage
   drawTremplins(dt);
   const pose = poseSinge(M, B, dt, autour(M, M.mode === 'swing' ? M.li : null));
   if (phase !== 'accueil') drawPerche();
@@ -403,7 +404,7 @@ function frame() {
 
 addEventListener('resize', resize); resize();
 $('version').textContent = VERSION;
-window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get image() { return { dpr, qualite, fluide }; }, profil, CFG, lancer, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
+window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get image() { return { dpr, qualite, fluide }; }, get cadre() { return { x: X(M.x) / W, y: Y(M.y) / H, large: W / S, portrait }; }, profil, CFG, lancer, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
 journal('page ouverte');
 // Un duel classé était engagé quand la page a été quittée ou rechargée : il compte comme une défaite.
 let abandon = 0;
