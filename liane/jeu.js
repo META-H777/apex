@@ -18,8 +18,9 @@ export const CFG = {
   pump: 22,              // traction du singe vers l'avant, tant qu'il n'a pas retrouvé sa vitesse
   fuite: 2,              // la vitesse en trop se dissipe à ce rythme
   drag: 0.004,           // frein de l'air en vol
-  portee: 1.9,           // les mains saisissent une liane à cette distance devant elles
-  portee2: 0.9,          // et un peu moins derrière
+  portee: 1.3,           // les mains saisissent une liane à cette distance devant elles : la longueur d'un bras tendu, pas plus
+  portee2: 0.8,          // et un peu moins derrière
+  pieds: 2.4,            // en vol, les pieds sont à cette distance sous les mains : c'est eux qui touchent un tremplin
   minR: 2.4,             // on ne saisit pas une liane juste sous son accroche
   debut: 2,              // les toutes premières lianes sont plus rapprochées de cette distance, puis l'écart s'ouvre sur 120 m
   arcMin: 0.45,          // l'arc doré ne descend jamais plus bas que cet angle
@@ -118,9 +119,9 @@ export function pas(m, lianas, dt, ev) {
     const sp = Math.hypot(m.vx, m.vy), k = 1 - C.drag * sp * dt; m.vx *= k; m.vy *= k;
     m.x += m.vx * dt; m.y += m.vy * dt;
     // Un tremplin : une grande feuille tendue au-dessus des cimes. Le singe qui tombe dessus rebondit, d'autant plus haut qu'il arrive vite.
-    if (m.vy < 0 && m.y < 4) for (const li of lianas) {
+    if (m.vy < 0 && m.y < 6) for (const li of lianas) {
       const tr = li.tr; if (li.x - 40 > m.x) break; if (!tr || Math.abs(m.x - tr.x) > tr.w / 2) continue;
-      const pieds = m.y - 0.9; if (pieds <= tr.y && pieds - m.vy * dt > tr.y - 0.5) { m.y = tr.y + 0.9; m.vy = 14.5 - 0.22 * m.vy; m.vx = Math.max(m.vx, 7.5); if (ev) ev.push({ type: 'rebond', x: m.x, y: tr.y, tr }); }
+      const pieds = m.y - C.pieds; if (pieds <= tr.y && pieds - m.vy * dt > tr.y - 0.5) { m.y = tr.y + C.pieds; m.vy = 14.5 - 0.22 * m.vy; m.vx = Math.max(m.vx, 7.5); if (ev) ev.push({ type: 'rebond', x: m.x, y: tr.y, tr }); }
     }
     if (m.hold) { const li = saisissable(m, lianas); if (li) saisir(m, li, ev); }
     if (m.mode === 'fly' && m.y < C.sol - 1.2) { m.mort = 'chute'; if (ev) ev.push({ type: 'mort', cause: 'chute', x: m.x, y: m.y }); }

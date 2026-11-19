@@ -1,11 +1,12 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des skins.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=5';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=5';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=5';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=6';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=6';
+import { corps, poseSinge, dessinerSinge, PERCHE } from './singe.js?v=6';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=6';
 
-const VERSION = 'v0.3.1';
+const VERSION = 'v0.4';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -41,10 +42,9 @@ let phase = 'accueil';                 // accueil, course ou fin
 let parcours = PARCOURS[0], rival = null, G = null, Bg = null, t = 0, mortT = 0, depasse = false, ecartT = -9, ignoreUp = false;
 let classe = false, parti = false, aLever = false, appuiFrais = false;     // duel classé ou non ; premier geste fait ; un lever de doigt en attente du prochain pas
 let accueilT = -9, aide = 9, arcVu = null, arcT = 0, cransVus = -1, distVue = -1, nuitVue = '', fluide = 0.016, mesureT = 0;
-const Mg = {}, trail = [], rings = [];
+const Mg = {}, trail = [], rings = [], perche = { x: 0, y: 0 };
 const X = (x) => (x - camX) * S + W * vue, Y = (y) => baseY - y * S + camDy;
-const corps = () => ({ phi: -0.4, phiV: 0, kick: 0, kickV: 0, tuck: 0, squash: 0, tail: null });
-function scene(seed, nuit) { jeu = new Jeu(seed, nuit, monde); M = jeu.M; B = corps(); pil = { gout: 0.9 }; camX = M.x + 3; camLead = 3; trail.length = 0; rings.length = 0; mortT = 0; arcVu = null; }
+function scene(seed, nuit) { jeu = new Jeu(seed, nuit, monde); M = jeu.M; B = corps(); perche.x = M.x; perche.y = M.y - PERCHE; pil = { gout: 0.9 }; camX = M.x + 3; camLead = 3; trail.length = 0; rings.length = 0; mortT = 0; arcVu = null; }
 const dire = (txt) => { $('note').textContent = txt; $('note').classList.remove('vu'); };
 const taire = () => $('note').classList.add('vu');
 function majCrans(n) { if (n === cransVus) return; cransVus = n; const el = $('crans').children; for (let i = 0; i < el.length; i++) el[i].classList.toggle('on', i < n); }
@@ -107,8 +107,6 @@ function hold(h) {
   if (phase !== 'course' || M.mort) return;
   if (h && M.idle) {
     if (aide === 0) { aide = 1; dire('lâche dans l\'arc doré'); } else taire();
-    // Le premier geste engage le duel : la mise est notée tout de suite. Quitter ou recharger la page en cours de duel compte comme une défaite.
-    if (!parti) { parti = true; $('hLui').textContent = rival.nom + ' · ' + Math.round(G.dist) + ' m'; if (classe) { profil.enCours = { rival: rival.id, elo: rival.elo }; garder(); } }
   }
   // Un appui plus court qu'une image n'est pas perdu : le doigt reste « posé » jusqu'au prochain pas du mouvement.
   if (h) { appuiFrais = true; aLever = false; jeu.setHold(true); } else if (appuiFrais) aLever = true; else jeu.setHold(false);
@@ -151,78 +149,45 @@ function ouvrirSkins() {
 }
 $('sListe').addEventListener('click', (e) => { const b = e.target.closest('[data-skin]'); if (!b) return; const s = skinById(b.dataset.skin); if (!possede(s)) return; profil.skin = s.id; garder(); ouvrirSkins(); });
 
-// ---------- Le singe : une silhouette articulée, posée par le mouvement ----------
-// phi : l'angle du corps qui pend sous les mains (0 = droit vers le bas, positif = vers l'avant). Il suit avec retard : c'est ce qui donne du poids.
-const K = 1.45;   // le singe est dessiné plus grand que nature, pour se lire d'un coup d'œil
-const ARM = 0.37 * K, TORSO = 0.58 * K, THIGH = 0.36 * K, SHIN = 0.38 * K, HEAD = 0.15 * K, LIMB = 0.095 * K, TAILN = 10, TAILSEG = 0.115 * K;
-const dir = (a) => [Math.sin(a), -Math.cos(a)];
-function spring(o, k, target, stiff, damp, dt) { o[k + 'V'] += ((target - o[k]) * stiff - o[k + 'V'] * damp) * dt; o[k] += o[k + 'V'] * dt; }
-// Coude ou genou : le point milieu d'un membre à deux os entre a et b.
-function joint(ax, ay, bx, by, l1, l2, side) {
-  let dx = bx - ax, dy = by - ay, d = Math.hypot(dx, dy) || 1e-4; const m = Math.min(d, l1 + l2 - 1e-3); dx /= d; dy /= d;
-  const a = (l1 * l1 - l2 * l2 + m * m) / (2 * m), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
-  return [ax + dx * a - dy * h * side, ay + dy * a + dx * h * side];
+// ---------- Le singe ----------
+// Son corps est dans singe.js. Ici on lui dit seulement ce qui l'entoure : la liane qu'il tient, celle qui vient, une feuille sous lui.
+function autour(m, tenue) {
+  const sw = m.mode === 'swing', e = { ancre: null, reste: 0, devant: 99, attend: !!m.idle, tremplin: false, tend: m.hold !== false };
+  if (sw) { e.ancre = tenue ? [tenue.x, tenue.y] : [m.ax, m.ay]; e.reste = tenue ? tenue.L - m.R : 0; return e; }
+  const mini = m.last === undefined ? 1 : -0.9;            // le fantôme ne dit pas quelle liane il vient de lâcher : on ne regarde que devant lui
+  for (const li of jeu.lianas) { const dx = li.x - m.x; if (dx < mini || (li === m.last && m.air < CFG.repos)) continue; e.devant = dx; break; }
+  if (m.vy < 0 && m.y < 7) for (const li of jeu.lianas) if (li.tr && Math.abs(m.x - li.tr.x) < li.tr.w / 2 + 1.2) { e.tremplin = true; break; }
+  return e;
 }
-function poseMonkey(M, B, dt) {
-  const sp = Math.hypot(M.vx, M.vy), sw = M.mode === 'swing';
-  let tPhi, tKick, tTuck;
-  if (sw) { tPhi = M.th - clamp(M.om * 0.085, -0.5, 0.5); tKick = clamp(M.th * 0.8 + M.om * 0.16, -0.55, 1.15); tTuck = 0.15; }
-  else { tPhi = clamp(Math.atan2(-M.vx, M.vy + 0.42 * sp), -1.85, -0.35); tTuck = clamp(1 - Math.abs(M.vy) / 11, 0, 1); tKick = 0.2 + tTuck * 0.7; }
-  spring(B, 'phi', tPhi, 190, 19, dt); spring(B, 'kick', tKick, 160, 17, dt);
-  B.tuck += (tTuck - B.tuck) * Math.min(1, dt * 9); B.squash = Math.max(0, B.squash - dt * 4);
-  const px = M.x, py = M.y, d0 = dir(B.phi), d1 = dir(B.phi + (sw ? -clamp(M.om * 0.05, -0.3, 0.3) : B.tuck * 0.35));
-  const sx = px + d0[0] * (ARM * 1.9), sy = py + d0[1] * (ARM * 1.9);                      // épaules
-  const tl = TORSO * (1 - B.squash * 0.25), hx = sx + d1[0] * tl, hy = sy + d1[1] * tl;    // hanches
-  // Les mains : toutes deux sur la liane quand il est pendu, l'une derrière l'autre en vol.
-  let h2x, h2y;
-  if (sw) { h2x = px + Math.sin(M.th) * 0.3 * K; h2y = py - Math.cos(M.th) * 0.3 * K; } else { h2x = px - (0.22 + B.tuck * 0.12) * K; h2y = py - 0.22 * K; }
-  const e1 = joint(sx, sy, px, py, ARM, ARM, -1), e2 = joint(sx, sy, h2x, h2y, ARM, ARM, -1);
-  // Les jambes : elles se lancent vers l'avant quand il remonte, se replient au sommet du vol.
-  const legs = [];
-  for (const s of [-1, 1]) {
-    const a = B.phi + B.kick + s * (0.2 + B.tuck * 0.12), kn = 0.45 + B.tuck * 1.2 + Math.max(0, -B.kick) * 0.6 + s * 0.12;
-    const tt = dir(a), kx = hx + tt[0] * THIGH, ky = hy + tt[1] * THIGH, u = dir(a - kn);
-    legs.push([kx, ky, kx + u[0] * SHIN, ky + u[1] * SHIN]);
+const drawMonkey = (p, col) => dessinerSinge(ctx, p, col, X, Y, S);
+
+// La branche du départ : le singe y attend, la liane en main, avant de se laisser partir.
+function drawPerche() {
+  const x1 = X(perche.x + 0.85); if (x1 < -S) return;
+  const x0 = X(perche.x - 26), y = Y(perche.y - 0.2), lis = Math.max(1.5, S * 0.035);
+  ctx.lineCap = 'round';
+  for (const [col, d] of [[PAL.rim, -lis], [PAL.ink, 0]]) {
+    ctx.strokeStyle = ctx.fillStyle = col; ctx.lineWidth = S * 0.4; ctx.beginPath(); ctx.moveTo(x0, y + S * 0.5 + d); ctx.quadraticCurveTo((x0 + x1) / 2, y - S * 0.1 + d, x1, y + d); ctx.stroke();
+    ctx.lineWidth = S * 0.14; ctx.beginPath(); ctx.moveTo(X(perche.x - 1.6), y + d); ctx.quadraticCurveTo(X(perche.x - 0.6), y - S * 0.7 + d, X(perche.x + 0.2), y - S * 1.5 + d); ctx.stroke();    // un rameau
   }
-  // La queue : une chaîne libre accrochée aux hanches, qui traîne et fouette toute seule.
-  if (!B.tail) { B.tail = []; for (let i = 0; i < TAILN; i++) B.tail.push({ x: hx - i * TAILSEG, y: hy, px: hx - i * TAILSEG, py: hy }); }
-  const T = B.tail; T[0].x = hx; T[0].y = hy;
-  for (let i = 1; i < TAILN; i++) { const n = T[i], vx = (n.x - n.px) * 0.93, vy = (n.y - n.py) * 0.93; n.px = n.x; n.py = n.y; n.x += vx; n.y += vy - CFG.g * 0.35 * dt * dt; }
-  for (let k = 0; k < 4; k++) for (let i = 1; i < TAILN; i++) { const a = T[i - 1], b = T[i]; let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1e-4; b.x = a.x + dx / d * TAILSEG; b.y = a.y + dy / d * TAILSEG; }
-  // La tête, entre les bras, tournée vers l'avant.
-  const f = [Math.cos(B.phi), Math.sin(B.phi)], cxh = sx - d0[0] * 0.2 * K + f[0] * 0.17 * K, cyh = sy - d0[1] * 0.2 * K + f[1] * 0.17 * K;
-  return { px, py, h2x, h2y, sx, sy, hx, hy, e1, e2, legs, T, head: [cxh, cyh], f };
-}
-function drawMonkey(p, col) {
-  const L = (x1, y1, x2, y2) => { ctx.moveTo(X(x1), Y(y1)); ctx.lineTo(X(x2), Y(y2)); };
-  ctx.strokeStyle = ctx.fillStyle = col; ctx.lineCap = ctx.lineJoin = 'round';
-  for (let i = 1; i < TAILN; i++) { ctx.lineWidth = S * LIMB * (0.95 - 0.6 * i / TAILN); ctx.beginPath(); L(p.T[i - 1].x, p.T[i - 1].y, p.T[i].x, p.T[i].y); ctx.stroke(); }   // la queue, de plus en plus fine
-  ctx.lineWidth = S * LIMB;
-  ctx.beginPath();
-  for (const l of p.legs) { L(p.hx, p.hy, l[0], l[1]); ctx.lineTo(X(l[2]), Y(l[3])); }
-  L(p.sx, p.sy, p.e1[0], p.e1[1]); ctx.lineTo(X(p.px), Y(p.py));
-  L(p.sx, p.sy, p.e2[0], p.e2[1]); ctx.lineTo(X(p.h2x), Y(p.h2y));
-  ctx.stroke();
-  ctx.lineWidth = S * 0.22 * K; ctx.beginPath(); L(p.sx, p.sy, p.hx, p.hy); ctx.stroke();                                          // le torse
-  ctx.lineWidth = S * 0.27 * K; ctx.beginPath(); L(p.sx * 0.4 + p.hx * 0.6, p.sy * 0.35 + p.hy * 0.65, p.hx, p.hy); ctx.stroke();   // le ventre rond
-  ctx.beginPath(); ctx.arc(X(p.head[0]), Y(p.head[1]), S * HEAD, 0, TAU); ctx.arc(X(p.head[0] + p.f[0] * 0.11 * K), Y(p.head[1] + p.f[1] * 0.11 * K - 0.04 * K), S * 0.08 * K, 0, TAU);
-  for (const l of p.legs) { ctx.moveTo(X(l[2]), Y(l[3])); ctx.arc(X(l[2]), Y(l[3]), S * 0.062 * K, 0, TAU); }
-  ctx.moveTo(X(p.px), Y(p.py)); ctx.arc(X(p.px), Y(p.py), S * 0.06 * K, 0, TAU); ctx.moveTo(X(p.h2x), Y(p.h2y)); ctx.arc(X(p.h2x), Y(p.h2y), S * 0.06 * K, 0, TAU);
+  ctx.fillStyle = PAL.ink; ctx.beginPath();
+  for (const [dx, dy, a] of [[0.2, 1.5, -0.6], [-0.15, 1.15, 0.7], [-0.5, 0.75, -0.9], [0.9, -0.05, 0.5], [-3.2, 0.05, -0.4]]) { const lx = X(perche.x + dx), ly = y - dy * S, sz = S * 0.22; ctx.moveTo(lx, ly); ctx.ellipse(lx + Math.cos(a) * sz, ly + Math.sin(a) * sz, sz, sz * 0.42, a, 0, TAU); }
   ctx.fill();
 }
 
 // ---------- Les lianes ----------
-function drawLianas() {
+function drawLianas(pose) {
   const al = ALLURE[monde.id] || ALLURE.canopee, lis = Math.max(1.5, S * 0.035);
   ctx.strokeStyle = ctx.fillStyle = PAL.ink; ctx.lineCap = 'round';
   for (const li of jeu.lianas) {
     const ax = X(li.x); if (ax < -S * 12 || ax > W + S * 12) continue;
     const ay = Y(li.y), tenue = M.mode === 'swing' && li === M.li; let ex, ey, cx, cy; const r = rnd(li.seed);
     if (tenue) {              // tendue jusqu'aux mains, le reste pend et traîne
-      const hx = X(M.x), hy = Y(M.y), rem = Math.max(0, li.L - M.R);
-      li.ta = (li.ta ?? M.th) + ((M.th * 0.5 - clamp(M.om * 0.16, -0.6, 0.6)) - (li.ta ?? M.th)) * 0.18;   // le bout libre pend surtout vers le bas
+      const hx = X(pose.px), hy = Y(pose.py), rem = Math.max(0, li.L - M.R);      // la liane va jusqu'aux mains du singe
+      li.ta = pose.bas;                                   // le bout libre pend sous les mains, en retard : c'est le corps du singe qui en tient le compte
       ex = hx + Math.sin(li.ta) * rem * S; ey = hy + Math.cos(li.ta) * rem * S;
-      ctx.lineWidth = S * al.ep; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(hx, hy); ctx.quadraticCurveTo(hx + Math.sin(M.th) * rem * S * 0.35, hy + Math.cos(M.th) * rem * S * 0.35, ex, ey); ctx.stroke();
+      const pli = Math.exp(-pose.saisi * 15) * 0.9;        // juste après la saisie, la liane pendait encore droit : elle se tend en un instant, sous le poids
+      ctx.lineWidth = S * al.ep; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + hx) / 2 + (ax - hx) / 2 * pli, (ay + hy) / 2, hx, hy); ctx.quadraticCurveTo(hx + Math.sin(li.ta) * rem * S * 0.5, hy + Math.cos(li.ta) * rem * S * 0.5, ex, ey); ctx.stroke();
       cx = (ax + hx) / 2; cy = (ay + hy) / 2;
     } else {                  // libre : elle se balance et se courbe selon son élan
       li.ta = undefined;
@@ -310,6 +275,8 @@ function frame() {
   if (mortT && phase === 'course' && time - mortT > 0.7) finir();
   if (mortT && phase === 'accueil' && time - mortT > 1.2) scene((Math.random() * 1e9) | 0, false);
   if (phase === 'course') {
+    // Le premier geste engage le duel : la mise est notée tout de suite. Quitter ou recharger la page en cours de duel compte comme une défaite.
+    if (!parti && !M.idle) { parti = true; $('hLui').textContent = rival.nom + ' · ' + Math.round(G.dist) + ' m'; if (classe) { profil.enCours = { rival: rival.id, elo: rival.elo }; garder(); } }
     const d = Math.max(0, Math.round(M.x)); if (d !== distVue) { distVue = d; $('chrono').textContent = d + ' m'; }
     majCrans(M.chaine);
     if (!depasse && Math.round(M.x) > Math.round(G.dist)) { depasse = true; $('ecart').textContent = rival.nom + ' dépassé'; $('ecart').className = 'maj on avance'; ecartT = time; }
@@ -361,11 +328,13 @@ function frame() {
   // Le plan du jeu : le feuillage du haut, les lianes, le fantôme du rival, l'arc doré, le singe, la cime du bas.
   drawTile(ctx, D.top.c, D.TW, camX * S, D.top.y + camDy, W);
   drawTremplins(dt);
-  drawLianas();
+  const pose = poseSinge(M, B, dt, autour(M, M.mode === 'swing' ? M.li : null));
+  if (phase !== 'accueil') drawPerche();
+  drawLianas(pose);
   if (phase !== 'accueil' && G) {                        // le fantôme : il porte le skin de son joueur
     etat(G, t, Mg);
     if (!Mg.fini) {
-      const gs = skinById(rival.skin), gp = poseMonkey(Mg, Bg, dt);
+      const gs = skinById(rival.skin), gp = poseSinge(Mg, Bg, dt, autour(Mg, null));
       ctx.globalAlpha = 0.42;
       if (Mg.mode === 'swing') { ctx.strokeStyle = PAL.ink; ctx.lineWidth = S * 0.06; ctx.beginPath(); ctx.moveTo(X(Mg.ax), Y(Mg.ay)); ctx.lineTo(X(Mg.x), Y(Mg.y)); ctx.stroke(); }
       if (gs.trail) { ctx.save(); ctx.translate(Math.max(1.5, S * 0.03), -Math.max(1.5, S * 0.03)); drawMonkey(gp, gs.rim); ctx.restore(); }
@@ -376,7 +345,7 @@ function frame() {
   }
   drawArc();
   // Le singe du joueur : sa traînée (celle de son skin, ou l'or de l'élan), un liseré de lumière, puis la silhouette.
-  const pose = poseMonkey(M, B, dt), o = Math.max(1.5, S * 0.03), tc = skin.trail || (M.chaine > 0 ? OR : null);
+  const o = Math.max(1.5, S * 0.03), tc = skin.trail || (M.chaine > 0 ? OR : null);
   if (tc) {
     const long = 2 * (22 + 9 * M.chaine), fort = skin.trail ? 0.4 + 0.15 * M.chaine : 0.2 + 0.2 * M.chaine;
     trail.push(pose.hx, pose.hy); while (trail.length > long) trail.splice(0, 2);
