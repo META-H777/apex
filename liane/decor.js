@@ -1,6 +1,6 @@
 // LIANE — le décor : tout est dessiné par le code, en silhouettes et en lumière. Aucune image, aucun film.
 // Chaque plan de forêt est peint une fois dans une bande qui se répète, puis glisse à sa propre vitesse.
-import { rnd } from './jeu.js?v=1';
+import { rnd } from './jeu.js?v=2';
 
 const TAU = Math.PI * 2;
 
@@ -170,7 +170,7 @@ export function buildDecor(W, H, S, baseY, seed = 7) {
   ];
 
   // Le plan du jeu : la cime des arbres en bas (on y rebondit) et le feuillage d'où pendent les lianes en haut.
-  const fh = Math.ceil(S * 5.2), fTop = baseY - S * 3.4;
+  const fh = Math.ceil(S * 5.2), fTop = baseY - S * 2.7;   // la cime est tenue assez bas pour que le singe reste lisible au creux du balancement
   D.floor = { y: fTop, h: fh, c: makeTile(TW, fh, (g) => { const r = rnd(seed + 6), by = S * 3.0;
       for (let i = 0; i < 9; i++) fronds(g, TW * (i + r()) / 9, by - S * (0.2 + r() * 0.5), S, r);
       for (let i = 0; i < 3; i++) palm(g, TW * (i + r()) / 3, by + S * 0.6, S * (2 + r() * 1.2), r);
