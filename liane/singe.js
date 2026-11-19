@@ -4,12 +4,12 @@
 // Les poses viennent de vrais singes-araignées filmés, étudiés image par image (voir liane/SINGE-REEL.md, partie « Ce que montrent les films ») :
 //  - Suspendu, il tient par un bras tendu ET par la queue, qui s'accroche comme un second bras. Le tronc est couché entre les deux,
 //    l'arrière-train en arrière, la tête devant l'épaule. L'autre bras pend. Les jambes pendent, pliées, molles, et pédalent un peu.
-//  - La queue est portée derrière lui, un peu relevée, le bout recourbé : un balancier, qui ondule sans s'agiter.
-//    Elle ne saisit la liane que s'il s'y attarde. Avant de lâcher, le bras libre part vers l'avant.
+//  - La queue est portée derrière lui, un peu relevée, le bout recourbé. Elle garde sa courbe et ne bouge presque pas.
+//    Avant de lâcher, le bras libre part vers l'avant.
 //  - Le saut : corps à l'horizontale, ventre vers le bas, les deux bras tendus devant, les jambes derrière, la queue dans le prolongement.
 //  - À la saisie, la main arrive la première ; le corps, lancé, passe dessous comme un poids ; la queue vient reprendre la liane.
 //  - Proportions mesurées sur les films : bras (main comprise) 1,35 fois le tronc, jambe 1 fois, queue 1,5 fois, tronc épais, petite tête ronde.
-import { CFG } from './jeu.js?v=9';
+import { CFG } from './jeu.js?v=10';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k, TAU = Math.PI * 2;
 const lisse = (k) => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
@@ -63,12 +63,13 @@ export function poseSinge(M, B, dt, env = {}) {
     // La queue reprend la liane un instant après la main, et la lâche la première.
     // La queue ne saisit la liane que s'il s'y attarde, et sans hâte. Dans une suite rapide de lianes elle reste derrière lui, en balancier :
     // la faire saisir et lâcher à chaque liane lui faisait faire un tour complet, comme une hélice.
-    const veutQueue = traine && reste > ALLONGE + TRONC + 0.75 * K;       // il faut assez de liane sous lui pour l'enlacer
+    const veutQueue = false;                              // elle ne saisit plus la liane : Romain la veut presque immobile
     B.qtient += ((veutQueue ? 1 : 0) - B.qtient) * Math.min(1, h * (veutQueue ? 4 : 6));
     B.mains += (((attend || traine) ? 1 : 0) - B.mains) * Math.min(1, h * 9);
     // La direction de la queue, dans le monde : derrière lui, un peu relevée. Elle suit lentement, sans épouser les à-coups du tronc.
-    const cQ = attend ? -0.5 : sw ? -1.95 + M.th * 0.25 : -1.75 + 0.4 * pente;
-    B.haut += ecart(cQ, B.haut) * Math.min(1, h * 5);
+    // Elle ne bouge presque pas : un dixième de ce qu'elle faisait (demande de Romain du 20/11).
+    const cQ = attend ? -0.5 : -1.85 + 0.3 * (sw ? M.th * 0.25 - 0.1 : 0.1 + 0.4 * pente);
+    B.haut += ecart(cQ, B.haut) * Math.min(1, h * 3);
     // --- Le bras qui tient, de la main à l'épaule. Sur la liane il prolonge la corde, tendu. En vol il est pointé vers l'avant.
     const cBras = attend ? 0.06 : sw ? M.th : -1.34 + 0.45 * pente + 0.08 * approche;
     let acc = -(G / 0.75) * Math.sin(ecart(B.bras, aplomb)) * 1.2 + ecart(cBras, B.bras) * (sw ? 45 : 200) - B.brasV * (sw ? 8 : 24);
@@ -160,10 +161,10 @@ export function poseSinge(M, B, dt, env = {}) {
     for (let i = 1; i < QN; i++) {
       const q = Q[i], t = i / (QN - 1);
       // L'élan du maillon est compté par rapport au corps, sinon la queue traînerait comme un ruban dès qu'il va vite.
-      const vx = (q.x - q.px - dbx / n) * 0.8 + dbx / n * (1 - 0.05 * t), vy = (q.y - q.py - dby / n) * 0.8 + dby / n * (1 - 0.05 * t);
-      q.px = q.x; q.py = q.y; q.x += vx; q.y += vy - C.g * 0.16 * t * h * h;
+      const vx = (q.x - q.px - dbx / n) * 0.45 + dbx / n, vy = (q.y - q.py - dby / n) * 0.45 + dby / n;
+      q.px = q.x; q.py = q.y; q.x += vx; q.y += vy - C.g * 0.02 * t * h * h;
       a += tour + (t > 0.6 ? crochet * (t - 0.6) / 0.4 * 2.1 : 0);
-      const o = dir(a), p = Q[i - 1], raide = 1 - Math.exp(-h * lerp(60, 16, Math.sqrt(t)));
+      const o = dir(a), p = Q[i - 1], raide = 1 - Math.exp(-h * lerp(150, 42, Math.sqrt(t)));      // presque rigide : elle garde sa courbe
       q.x += (p.x + o[0] * QSEG - q.x) * raide; q.y += (p.y + o[1] * QSEG - q.y) * raide;
     }
     for (let k = 0; k < 3; k++) for (let i = 1; i < QN; i++) { const p = Q[i - 1], q = Q[i]; const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1e-4; q.x = p.x + dx / d * QSEG; q.y = p.y + dy / d * QSEG; }
