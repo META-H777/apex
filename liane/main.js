@@ -56,7 +56,7 @@ function lancer(revanche) {
   phase = 'course'; t = 0; depasse = false; ecartT = -9; distVue = -1; nuitVue = ''; majCrans(0);
   aide = profil.v + profil.d < 3 ? 0 : 9;                // les premières parties, le jeu dit quoi faire, liane après liane
   for (const id of ['accueil', 'fin', 'classement', 'skins']) $(id).classList.remove('on');
-  $('hud').classList.add('on'); $('chrono').textContent = '0 m'; $('ecart').className = ''; $('nuit').classList.remove('on');
+  $('hud').classList.add('on'); $('chrono').textContent = '0 m'; $('ecart').className = 'maj'; $('nuit').classList.remove('on');
   $('hMoi').textContent = 'toi · ' + profil.elo; $('hLui').textContent = rival.nom + ' · ' + Math.round(G.dist) + ' m';
   dire(aide === 0 ? 'pose le doigt et tiens' : 'tiens, puis lâche dans l\'arc doré');
 }
@@ -252,8 +252,8 @@ function frame() {
   if (phase === 'course') {
     const d = Math.max(0, Math.round(M.x)); if (d !== distVue) { distVue = d; $('chrono').textContent = d + ' m'; }
     majCrans(M.chaine);
-    if (!depasse && M.x > G.dist) { depasse = true; $('ecart').textContent = rival.nom + ' dépassé'; $('ecart').className = 'on avance'; ecartT = time; }
-    if (ecartT > 0 && time - ecartT > 2.4) { $('ecart').className = ''; ecartT = -9; }
+    if (!depasse && M.x > G.dist) { depasse = true; $('ecart').textContent = rival.nom + ' dépassé'; $('ecart').className = 'maj on avance'; ecartT = time; }
+    if (ecartT > 0 && time - ecartT > 2.4) { $('ecart').className = 'maj'; ecartT = -9; }
     const dn = M.x - jeu.nuit.x, txt = !M.idle && dn < 22 ? 'la nuit · ' + Math.max(0, Math.round(dn)) + ' m' : '';
     if (txt !== nuitVue) { nuitVue = txt; if (txt) $('nuit').textContent = txt; $('nuit').classList.toggle('on', !!txt); }
   }
