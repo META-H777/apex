@@ -1,16 +1,17 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, ou en direct contre un ami, un classement Elo, des tenues.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js, les dessins de l'interface dans ui.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=26';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=26';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=26';
-import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=26';
-import { chargerPeau, dessinerPeau } from './peau.js?v=26';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=26';
-import { embleme, ICONE, DEFS, compter } from './ui.js?v=26';
-import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=26';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=27';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=27';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=27';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=27';
+import { chargerPeau, dessinerPeau } from './peau.js?v=27';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=27';
+import { embleme, ICONE, DEFS, compter } from './ui.js?v=27';
+import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=27';
+import { creerScene, jouerScene, TEMPS } from './fin.js?v=27';
 
-const VERSION = 'v0.14';
+const VERSION = 'v0.15';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -36,6 +37,7 @@ function resize() {
   // Téléphone debout : on recule (22 m de large), et le jeu occupe une bande au milieu, entre le feuillage du haut et les cimes du bas.
   if (portrait) { S = Math.min(W / 22, H / 24); baseY = Math.round(H * 0.5 + 6.6 * S); ancre = 0.41; } else { S = H / 14; baseY = H - 0.95 * S; ancre = 0.47; }
   liberer(D); D = buildDecor(W, H, S, baseY, +(params.get('decor') || 7)); unTour = true;
+  if (scn && eloFin && eloFin.dit) placerElo(cadreScene());
 }
 // Les images de l'ancien décor sont vidées tout de suite : sur téléphone, la mémoire des images est comptée, et la dépasser recharge la page.
 function liberer(d, vu = new Set()) { if (!d || typeof d !== 'object' || vu.has(d)) return; vu.add(d); if (typeof d.getContext === 'function') { d.width = d.height = 0; return; } for (const k in d) liberer(d[k], vu); }
@@ -47,6 +49,7 @@ let parcours = PARCOURS[0], rival = null, G = null, Bg = null, t = 0, mortT = 0,
 let classe = false, parti = false, aLever = false, appuiFrais = false;     // duel classé ou non ; premier geste fait ; un lever de doigt en attente du prochain pas
 let accueilT = -9, aide = 9, arcVu = null, arcT = 0, cransVus = -1, distVue = -1, nuitVue = '', fluide = 0.016, mesureT = 0;
 let attendVu = false, lancement = false, vsPret = false, vsFin = 0, conseil = '', ongletVu = 'jouer', segVu = 'route', pisteMoi = -1, pisteLui = -1;
+let scn = null, eloFin = null;         // la scène de fin de duel, et ce que les compteurs d'Elo doivent y montrer
 let net = null, veilleur = 0, calqueLui = null;     // le duel en direct : la liaison avec l'autre téléphone, quand il y en a une
 const Mg = {}, Ma = {}, trail = [], rings = [], perche = { x: 0, y: 0 };
 let Ba = null, chargeVue = -1, pouvoirT = 0, dRaf = 0, dT = 0, dLast = 0, Bp = null;
@@ -82,7 +85,7 @@ function majInstaller() { $('bInstaller').hidden = installee || !tactile || !!pr
 function avance(elo) { const r = rang(elo); if (!r.suivant) return 1; const bas = r.i ? r.bas : 700; return clamp((elo - bas) / (r.suivant[0] - bas), 0.04, 1); }
 const suite = (elo) => { const r = rang(elo); return r.suivant ? r.suivant[1] + ' dans ' + (r.suivant[0] - elo) + ' pts' : 'rang le plus haut'; };
 const ordinal = (n) => n + (n === 1 ? 'er' : 'e');
-const visage = (e) => `singes/${e.id}-portrait.png?v=26`;
+const visage = (e) => `singes/${e.id}-portrait.png?v=27`;
 function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
   $('aEmb').innerHTML = embleme(r.i, 46); $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom; $('aBarre').style.width = avance(profil.elo) * 100 + '%'; $('aSuite').textContent = suite(profil.elo);
@@ -115,7 +118,7 @@ function onglet(nom, seg) {
 }
 function accueil() {
   if (lancement) return;
-  doigts.clear(); phase = 'accueil'; eveil(false); accueilT = time; scene(hasard(), false); journal('accueil');
+  doigts.clear(); phase = 'accueil'; eveil(false); accueilT = time; finScene(); scene(hasard(), false); journal('accueil');
   $('fin').classList.remove('pret'); for (const id of ['fin', 'hud', 'duel']) $(id).classList.remove('on');
   $('onglets').classList.remove('cache'); taire(); onglet('jouer');
 }
@@ -144,7 +147,7 @@ function fermerVs(force) { if (!vsPret || (net && force !== true)) return; clear
 function lancer(rejouer, source = 'code', choisi = false) {
   rejouer = rejouer && !!rival; journal((rejouer ? 'entraînement lancé : ' : 'duel lancé : ') + source); $('fin').classList.remove('pret'); doigts.clear(); aLever = appuiFrais = false;
   if (!rejouer && !choisi) { parcours = PARCOURS[(Math.random() * PARCOURS.length) | 0]; rival = adversaire(profil.elo, rival); }
-  classe = !rejouer && !auto && !monde.essai; parti = false; gel = false;
+  classe = !rejouer && !auto && !monde.essai; parti = false; gel = false; finScene(); if (!net && !sansPeau) { const h = habitDe(rival); peauDe(h.e, h.x); }      // la tenue du rival se charge pendant la course : elle servira à la scène de fin
   if (net) { G = { rival, dist: 0, temps: 0, direct: true }; Bg = corps(morpho(net.lui.e.corps)); net.etape = 'course'; } else { G = fantome(parcours, rival, monde); Bg = corps(); }
   scene(parcours, true);
   eveil(true); phase = 'course'; t = 0; depasse = !!net; ecartT = -9; distVue = -1; nuitVue = ''; pisteMoi = pisteLui = -1; majCrans(0); chargeVue = -2; pouvoirT = 0; $('pNom').textContent = esp.pouvoir.nom; majPouvoir();
@@ -190,6 +193,17 @@ function finir() {
   $('hud').classList.remove('on'); $('fin').classList.add('on');
   const max = Math.max(dist, lui, 1);
   requestAnimationFrame(() => requestAnimationFrame(() => { $('fbMoi').style.width = dist / max * 100 + '%'; $('fbLui').style.width = lui / max * 100 + '%'; $('fBarre').style.transition = ''; $('fBarre').style.width = avance(profil.elo) * 100 + '%'; }));
+  // La scène de fin : les deux singes, l'Elo de chacun au-dessus de lui. Le rival simulé perd ou gagne des points comme toi ; en direct, chacun annonce les siens.
+  if (!auto) {
+    const h = direct ? { e: net.lui.e, x: net.lui.x } : habitDe(rival), dLui = !classe ? 0 : direct ? elo(rival.elo, avant, !gagne) : elo(rival.elo, avant, !gagne), luiAvant = rival.elo;
+    if (classe && !direct) { bouger(rival, dLui); garder(); }
+    if (direct) { net.dLui = null; net.lien.envoyer({ k: 'elo', d, apres: profil.elo }); }
+    scn = creerScene({ corps: esp.corps, peau, encre: skinById(profil.skin).ink }, { corps: h.e.corps, peau: sansPeau ? null : peauDe(h.e, h.x), encre: skinById(rival.skin).ink }, gagne);
+    eloFin = { dit: false, avant, apres: profil.elo, d, luiAvant, dLui, direct, classe };
+    $('fin').classList.add('scene'); for (const id of ['sMoi', 'sLui']) $(id).classList.remove('on');
+    $('sMoiEmb').innerHTML = embleme(rA.i, 24); $('sMoiElo').textContent = avant; $('sMoiD').textContent = ''; $('sMoiSuite').textContent = '';
+    $('sLuiNom').textContent = rival.nom; $('sLuiEmb').innerHTML = embleme(rang(luiAvant).i, 24); $('sLuiElo').textContent = luiAvant; $('sLuiD').textContent = '';
+  } else finScene();
   // Les boutons ne répondent qu'après un instant : un doigt qui tapote encore au moment de la chute ne relance pas une partie par accident.
   setTimeout(() => { if (phase === 'fin') $('fin').classList.add('pret'); }, 700);
 }
@@ -516,6 +530,7 @@ function recuDirect(m) {
     if (m.gagne) { net.issue = 'perdu'; net.absent = !M.mort; if (Number.isFinite(m.x)) G.dist = Math.max(0, m.x); if (!M.mort) finir(); }
     else if (!net.mortLui) { net.mortLui = { x: Math.max(0, Number.isFinite(m.x) ? m.x : G.dist), cause: 'chute' }; G.dist = net.mortLui.x; if (!M.mort) gagner(); }
   }
+  else if (m.k === 'elo') { if (Number.isFinite(m.d)) { net.dLui = clamp(Math.round(m.d), -200, 200); if (eloFin && eloFin.direct && !eloFin.dit) eloFin.dLui = net.dLui; } }
   else if (m.k === 'encore') { net.encoreLui = true; if (net.etape === 'fin') { majRevanche(); if (net.hote && net.encoreMoi) manche(); } }
   else if (m.k === 'quitte') luiParti();
 }
@@ -588,6 +603,23 @@ function etatDirect(out) {
   return out;
 }
 addEventListener('pagehide', () => { if (net && net.luiDe) net.lien.envoyer({ k: 'quitte' }); });
+
+// ---------- La scène de fin de duel (fin.js) : où elle se place à l'écran, et les compteurs d'Elo au-dessus des singes ----------
+// Téléphone debout : la scène occupe le haut de l'écran, le résultat est en bas. Couché : la scène à gauche, le résultat à droite.
+function cadreScene() { const w = portrait ? W : W * 0.54, h = portrait ? H * 0.6 : H, Z = Math.min(w / 6.4, h * 0.62 / 3); return { cx: portrait ? W / 2 : W * 0.27, y0: h * (portrait ? 0.4 : 0.43), Z, W, H }; }
+// Un rival simulé a lui aussi son espèce et, pour un sur trois, une tenue : toujours les mêmes pour un même rival.
+function habitDe(b) { const e = ESPECES[b.id % ESPECES.length], n = e.tenues.length; return { e, x: e.tenues[n > 1 && b.id % 3 === 0 ? 1 + (b.id % (n - 1)) : 0] }; }
+function montrerElo(c) {
+  const E = eloFin; E.dit = true; if (E.direct && net && net.dLui !== null && E.classe) E.dLui = net.dLui;
+  const signe = (d) => (d >= 0 ? '+' : '−') + Math.abs(d); placerElo(c);
+  $('sMoi').classList.add('on'); $('sLui').classList.add('on'); if (!E.classe) return;
+  $('sMoiD').textContent = signe(E.d); $('sMoiD').classList.toggle('baisse', E.d < 0); $('sLuiD').textContent = signe(E.dLui); $('sLuiD').classList.toggle('baisse', E.dLui < 0);
+  compter($('sMoiElo'), E.avant, E.apres, 1100); compter($('sLuiElo'), E.luiAvant, Math.max(100, E.luiAvant + E.dLui), 1100);
+  setTimeout(() => { if (eloFin !== E) return; $('sMoiEmb').innerHTML = embleme(rang(E.apres).i, 24); $('sLuiEmb').innerHTML = embleme(rang(Math.max(100, E.luiAvant + E.dLui)).i, 24); }, 1150);
+}
+// Les compteurs se posent au-dessus des mains de chaque singe, assez haut pour que le geste de victoire ne passe pas dessus.
+function placerElo(c) { const px = dpr; $('sMoi').style.left = (c.cx - 1.55 * c.Z) / px + 'px'; $('sLui').style.left = (c.cx + 1.55 * c.Z) / px + 'px'; $('sMoi').style.top = $('sLui').style.top = Math.max(portrait ? 62 : 44, c.y0 / px - 122) + 'px'; }
+function finScene() { scn = null; eloFin = null; $('fin').classList.remove('scene'); for (const id of ['sMoi', 'sLui']) $(id).classList.remove('on'); }
 
 // La branche du départ : le singe y attend, la liane en main, avant de se laisser partir.
 function drawPerche() {
@@ -699,7 +731,7 @@ function frame() {
   // Le mouvement avance du temps réellement écoulé, découpé en pas courts : l'image suit le doigt sans à-coup.
   if (!paused) {
     const n = Math.max(1, Math.ceil(real * 120 - 1e-6)), h = real / n;
-    for (let i = 0; i < n && !M.mort; i++) {
+    for (let i = 0; i < n && !M.mort && !scn; i++) {
       if (phase !== 'course' || auto) pilote(jeu, pil);            // hors course, le singe joue tout seul
       jeu.step(h);
       if (appuiFrais) { appuiFrais = false; if (aLever) { aLever = false; jeu.setHold(false); } }
@@ -812,7 +844,7 @@ function frame() {
       ctx.globalAlpha = 1;
     }
   }
-  drawArc();
+  if (!scn) drawArc();
   // Le singe du joueur : sa traînée (celle de son skin, ou l'or de l'élan), un liseré de lumière, puis la silhouette.
   const o = Math.max(1.5, S * 0.03), tc = skin.trail || (M.chaine > 0 ? OR : null);
   if (tc) {
@@ -834,7 +866,8 @@ function frame() {
     const pa = poseSinge(Ma, Ba, dt, { ancre: [ami.x, ami.y], reste: ami.L - R, devant: 99, attend: false, tend: true });
     if (peau && peau.pret) dessinerPeau(ctx, pa, peau, X, Y, S); else drawMonkey(pa, skin.ink);
   }
-  if (peau && peau.pret) dessinerPeau(ctx, pose, peau, X, Y, S);
+  if (scn) { /* la scène de fin montre les deux singes : celui de la course s'efface */ }
+  else if (peau && peau.pret) dessinerPeau(ctx, pose, peau, X, Y, S);
   else { ctx.save(); ctx.translate(o, -o); drawMonkey(pose, skin.rim); ctx.restore(); drawMonkey(pose, skin.ink); }
   // Un lâcher dans l'arc doré : un anneau de lumière s'ouvre, une seule fois.
   if (rings.length) {
@@ -890,6 +923,10 @@ function frame() {
   }
   ctx.globalAlpha = 1;
   ctx.drawImage(D.vig, 0, 0, W, H);
+  if (scn) {
+    const c = cadreScene(); jouerScene(ctx, scn, real * (window.LIANE.lent || 1), c, PAL.ink);          // lent : un ralenti, pour les mises au point
+    if (!eloFin.dit && scn.t >= TEMPS.elo) montrerElo(c);
+  }
 
   // En course : la ligne du haut, de ton départ jusqu'au repère du rival. Les deux points avancent dessus.
   if (phase === 'course') {
@@ -908,7 +945,7 @@ $('version').textContent = VERSION;
 document.body.insertAdjacentHTML('afterbegin', DEFS);
 { const noms = { jouer: 'Jouer', singes: 'Singes', boutique: 'Boutique', rangs: 'Classement' }; for (const b of $('onglets').children) b.innerHTML = ICONE[b.dataset.onglet] + '<span>' + noms[b.dataset.onglet] + '</span>'; }
 $('iNon').innerHTML = ICONE.croix; $('mPrec').innerHTML = ICONE.retour; $('mSuiv').innerHTML = ICONE.fleche; $('dFermer').innerHTML = ICONE.croix; $('pouvoir').firstElementChild.innerHTML = ICONE.eclair;
-window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get net() { return net; }, get image() { return { dpr, qualite, fluide }; }, get cadre() { return { x: X(M.x) / W, y: Y(M.y) / H, large: W / S, portrait }; }, profil, CFG, lancer, defier, onglet, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
+window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get net() { return net; }, get scn() { return scn; }, get image() { return { dpr, qualite, fluide }; }, get cadre() { return { x: X(M.x) / W, y: Y(M.y) / H, large: W / S, portrait }; }, profil, CFG, lancer, defier, onglet, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
 journal('page ouverte');
 // Un duel classé était engagé quand la page a été quittée ou rechargée : il compte comme une défaite.
 let abandon = 0;

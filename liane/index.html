@@ -96,6 +96,21 @@
   @keyframes bat { 0% { opacity:0; transform:scale(1.5); } 18% { opacity:1; transform:none; } 72% { opacity:1; } 100% { opacity:0; transform:scale(.92); } }
   #fin.direct #bRevanche { display:none; } #fin.direct #bAccueil { grid-column:1 / -1; }
   .avatar img { width:100%; height:100%; border-radius:inherit; object-fit:contain; background:radial-gradient(120% 90% at 50% 25%, #f6e9b8 0%, #bfe0cf 45%, #4f9c95 100%); }
+  /* La scène de fin de duel : les deux singes en haut, sur le jeu ; l'Elo de chacun au-dessus de lui ; le résultat et les boutons en bas */
+  #fin.scene { background:linear-gradient(180deg, rgba(2,16,20,0) 0%, rgba(2,16,20,0) 52%, rgba(2,16,20,.9) 66%); align-items:flex-end; }
+  #fin.scene #fTitre { position:absolute; left:50%; top:calc(var(--st) + 24px); transform:translateX(-50%); white-space:nowrap; }
+  #fin.scene .fCarte { gap:10px; } #fin.scene .fG { gap:5px; } #fin.scene #fTemps { font-size:44px; } #fin.scene .fDist small { font-size:16px; }
+  #fin.scene .fEloBloc:not(.hors) { display:none; }
+  .sElo { position:absolute; display:none; flex-direction:column; align-items:center; gap:3px; opacity:0; transform:translate(-50%, 10px); transition:opacity .35s, transform .45s var(--doux-mvt); pointer-events:none; text-shadow:0 2px 14px rgba(2,14,18,.8); }
+  #fin.scene .sElo { display:flex; } .sElo.on { opacity:1; transform:translate(-50%, 0); }
+  .sElo small { font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--doux); font-weight:500; max-width:42vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sElo b { font-size:30px; font-weight:600; line-height:1; display:flex; align-items:center; gap:6px; } .sElo .emb { filter:none; }
+  .sElo i { font-style:normal; font-size:14px; font-weight:600; padding:3px 10px; border-radius:10px; background:rgba(168,236,176,.16); color:var(--vert); text-shadow:none; } .sElo i.baisse { background:rgba(255,177,153,.16); color:var(--rouge); } .sElo i:empty { display:none; }
+  .sElo em { font-style:normal; font-size:10.5px; color:var(--doux); white-space:nowrap; } .sElo em:empty { display:none; }
+  @media (orientation:landscape) {
+    #fin.scene { background:linear-gradient(90deg, rgba(2,16,20,0) 40%, rgba(2,16,20,.9) 57%); align-items:center; justify-content:flex-end; }
+    #fin.scene .fCarte { width:min(42%, 420px); flex-direction:column; align-items:stretch; gap:8px; } #fin.scene #fTitre { left:27%; top:calc(var(--st) + 12px); } #fin.scene #fTemps { font-size:36px; }
+  }
   #installe ol { margin:0; padding:0 0 0 20px; text-align:left; font-size:14px; line-height:1.6; color:var(--creme); align-self:stretch; } #installe b { font-size:18px; font-weight:600; }
 
   /* ---------- Les onglets ---------- */
@@ -338,6 +353,8 @@
 </div>
 
 <div id="fin" class="ecran" data-ui>
+  <div class="sElo" id="sMoi"><small>Toi</small><b><span class="emb" id="sMoiEmb"></span><span id="sMoiElo"></span></b><i id="sMoiD"></i><em id="sMoiSuite"></em></div>
+  <div class="sElo" id="sLui"><small id="sLuiNom"></small><b><span class="emb" id="sLuiEmb"></span><span id="sLuiElo"></span></b><i id="sLuiD"></i></div>
   <div class="fCarte">
     <div class="fG">
       <div id="fTitre"></div>
@@ -440,6 +457,6 @@
 <div id="decompte" class="ombre"></div>
 <div id="version"></div>
 <div id="chargement">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=26"></script>
+<script type="module" src="main.js?v=27"></script>
 </body>
 </html>

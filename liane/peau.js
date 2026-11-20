@@ -12,7 +12,7 @@ function toile(src, w, h, voile) {
 
 // allure : comment poser les pièces de ce singe (taille de la tête, largeur du tronc et de la queue, trait de la queue) ; voir especes.js.
 const ALLURE = { tete: 0.3, tronc: 0.74, queue: 1.5, trait: [0.1, 0.028], ombre: 0.36 };
-export function chargerPeau(nom, allure = ALLURE, v = '26') {
+export function chargerPeau(nom, allure = ALLURE, v = '27') {
   const peau = { nom, allure, pret: false, f: null, clair: [], sombre: [], poil: '#4a2a1c' };
   const image = new Promise((ok, non) => { const im = new Image(); im.onload = () => ok(im); im.onerror = non; im.src = `singes/${nom}.png?v=${v}`; });
   Promise.all([fetch(`singes/${nom}.json?v=${v}`).then((r) => r.json()), image]).then(([f, im]) => {
