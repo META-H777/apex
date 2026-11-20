@@ -1,12 +1,13 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des skins.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=10';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=10';
-import { corps, poseSinge, dessinerSinge, PERCHE } from './singe.js?v=10';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=10';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=12';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=12';
+import { corps, poseSinge, dessinerSinge, PERCHE } from './singe.js?v=12';
+import { chargerPeau, dessinerPeau } from './peau.js?v=12';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=12';
 
-const VERSION = 'v0.5.3';
+const VERSION = 'v0.6';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -160,6 +161,8 @@ function autour(m, tenue) {
   return e;
 }
 const drawMonkey = (p, col) => dessinerSinge(ctx, p, col, X, Y, S);
+// Le singe peint (pièces faites avec Higgsfield, posées sur le même squelette). ?singe=code garde la silhouette dessinée par le code.
+const peau = params.get('singe') === 'code' ? null : chargerPeau(params.get('singe') || 'araignee');
 
 // La branche du départ : le singe y attend, la liane en main, avant de se laisser partir.
 function drawPerche() {
@@ -354,7 +357,8 @@ function frame() {
     for (let i = 2; i < trail.length; i += 2) { const k = i / trail.length; ctx.strokeStyle = `rgba(${tc},${fort * k * k})`; ctx.lineWidth = S * 0.26 * k; ctx.beginPath(); ctx.moveTo(X(trail[i - 2]), Y(trail[i - 1])); ctx.lineTo(X(trail[i]), Y(trail[i + 1])); ctx.stroke(); }
     ctx.globalCompositeOperation = 'source-over';
   } else if (trail.length) trail.splice(0, 4);
-  ctx.save(); ctx.translate(o, -o); drawMonkey(pose, skin.rim); ctx.restore(); drawMonkey(pose, skin.ink);
+  if (peau && peau.pret) dessinerPeau(ctx, pose, peau, X, Y, S);
+  else { ctx.save(); ctx.translate(o, -o); drawMonkey(pose, skin.rim); ctx.restore(); drawMonkey(pose, skin.ink); }
   // Un lâcher dans l'arc doré : un anneau de lumière s'ouvre, une seule fois.
   if (rings.length) {
     ctx.globalCompositeOperation = 'lighter';

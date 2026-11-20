@@ -9,7 +9,7 @@
 //  - Le saut : corps à l'horizontale, ventre vers le bas, les deux bras tendus devant, les jambes derrière, la queue dans le prolongement.
 //  - À la saisie, la main arrive la première ; le corps, lancé, passe dessous comme un poids ; la queue vient reprendre la liane.
 //  - Proportions mesurées sur les films : bras (main comprise) 1,35 fois le tronc, jambe 1 fois, queue 1,5 fois, tronc épais, petite tête ronde.
-import { CFG } from './jeu.js?v=10';
+import { CFG } from './jeu.js?v=12';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k, TAU = Math.PI * 2;
 const lisse = (k) => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
@@ -157,6 +157,8 @@ export function poseSinge(M, B, dt, env = {}) {
   const base = B.haut, tour = attend ? 0.02 : -0.03, crochet = attend ? 0.25 : -0.1;
   Q[0].x = bx; Q[0].y = by; Q[0].px = bx; Q[0].py = by;
   if (dt > 0) for (let s = 0; s < n; s++) {
+    // L'attache avance pas à pas, comme les maillons : posée d'un coup au bout de l'image, elle pliait la chaîne en dents de scie à 60 images par seconde.
+    { const k = 1 - (s + 1) / n; Q[0].x = bx - dbx * k; Q[0].y = by - dby * k; }
     let a = base;
     for (let i = 1; i < QN; i++) {
       const q = Q[i], t = i / (QN - 1);
