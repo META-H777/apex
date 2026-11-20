@@ -117,6 +117,18 @@
     #fin.scene { background:linear-gradient(90deg, rgba(2,16,20,0) 40%, rgba(2,16,20,.9) 57%); align-items:center; justify-content:flex-end; }
     #fin.scene .fCarte { width:min(42%, 420px); flex-direction:column; align-items:stretch; gap:8px; } #fin.scene #fTitre { left:27%; top:calc(var(--st) + 12px); } #fin.scene #fTemps { font-size:36px; }
   }
+  /* Les saisons : la ligne de l'accueil, l'onglet du classement, le bilan de fin de saison */
+  #bSaison { grid-column:1 / -1; height:42px; display:flex; align-items:center; gap:9px; padding:0 8px 0 14px; border-radius:14px; font-size:12.5px; text-align:left; transition:transform .12s; }
+  #bSaison:active { transform:scale(.97); } #bSaison b { font-weight:600; color:var(--or); white-space:nowrap; } #bSaison span { flex:1; color:var(--doux); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } #bSaison svg { width:16px; height:16px; color:var(--pale); flex:none; }
+  #rSeg { grid-template-columns:repeat(3, 1fr); }
+  .sTete { padding:16px; border-radius:22px; background:linear-gradient(135deg, rgba(255,217,138,.16), rgba(255,217,138,.04)); border:1px solid rgba(255,217,138,.3); margin-bottom:12px; display:grid; grid-template-columns:1fr auto; gap:4px 12px; align-items:center; }
+  .sTete h3 { margin:0; font-size:19px; font-weight:600; } .sTete p { margin:0; font-size:12.5px; color:var(--doux); line-height:1.45; grid-column:1 / -1; }
+  .sTete .jours { grid-row:1; grid-column:2; text-align:right; } .sTete .jours b { display:block; font-size:30px; font-weight:600; line-height:1; color:var(--or); } .sTete .jours small { font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--doux); }
+  .sTitre { margin:18px 2px 10px; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--doux); font-weight:500; }
+  .gain i.pt { width:10px; height:10px; border-radius:50%; flex:none; }
+  .medailles { display:flex; flex-wrap:wrap; gap:10px; } .medaille { display:flex; flex-direction:column; align-items:center; gap:4px; padding:12px 14px; border-radius:18px; border:1px solid var(--trait); background:var(--carte2); font-size:11px; color:var(--doux); } .medaille b { font-size:13px; color:var(--creme); font-weight:500; }
+  #saisonFin .feuille { gap:10px; } #saisonFin h3 { margin:0; font-size:20px; font-weight:600; } #sfRang { font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--or); font-weight:500; }
+  #sfGains { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; } #sfSuite b { color:var(--creme); font-weight:600; } #sfApercu:empty { display:none; }
   #installe ol { margin:0; padding:0 0 0 20px; text-align:left; font-size:14px; line-height:1.6; color:var(--creme); align-self:stretch; } #installe b { font-size:18px; font-weight:600; }
 
   /* ---------- Les onglets ---------- */
@@ -331,6 +343,7 @@
   <div class="logo ombre"><b>LIANE</b><small>va plus loin que ton rival</small></div>
   <div class="bas">
     <div class="carte" id="bInstaller" data-ui hidden><button id="iOui"><b>Installer LIANE</b> · plein écran, comme une app</button><button id="iNon" aria-label="ne plus proposer"></button></div>
+    <button class="carte" id="bSaison" data-ui><b id="sNom"></b><span id="sReste"></span></button>
     <button class="monSinge carte" id="bSinge" data-ui><img id="aSingeImg" alt=""><span class="duo"><small id="aSingeTenue"></small><b id="aSingeNom"></b></span></button>
     <div class="mondes carte" data-ui><button id="mPrec" aria-label="niveau précédent"></button><span class="duo"><small id="mInfo"></small><b id="mNom"></b><span id="mPoints"></span></span><button id="mSuiv" aria-label="niveau suivant"></button></div>
     <button class="cta" id="bJouer" data-ui><b>Jouer</b><small id="aMise"></small></button>
@@ -388,7 +401,7 @@
   <div id="gListe" class="rail"></div>
   <h3>Traînée</h3>
   <div id="sListe"></div>
-  <p class="pied">Les traînées se gagnent en montant au classement.</p>
+  <p class="pied">Les traînées se gagnent en montant au classement. Celles du mois sont données à la fin de la saison.</p>
 </section>
 
 <section id="boutique" class="ecran panneau" data-ui>
@@ -399,8 +412,9 @@
 <section id="rangs" class="ecran panneau" data-ui>
   <header class="pTete"><h2>Classement</h2></header>
   <div id="rMoi" class="moiCarte"></div>
-  <div class="seg" id="rSeg"><button data-seg="route" class="actif">Mon parcours</button><button data-seg="monde">Mondial</button></div>
+  <div class="seg" id="rSeg"><button data-seg="route" class="actif">Parcours</button><button data-seg="saison">Saison</button><button data-seg="monde">Mondial</button></div>
   <div id="rRoute"></div>
+  <div id="rSaison" hidden></div>
   <div id="rMonde" hidden><div class="podium" id="cPodium"></div><ol id="cListe"></ol><p class="pied">Aperçu : ces rivaux sont simulés par le jeu. Le vrai classement mondial, entre joueurs, viendra avec le serveur.</p></div>
 </section>
 
@@ -455,6 +469,18 @@
   </div>
 </div>
 
+<div id="saisonFin" class="voile" data-ui hidden>
+  <div class="feuille">
+    <h3 id="sfTitre"></h3>
+    <span class="emb" id="sfEmb"></span>
+    <span id="sfRang"></span>
+    <div id="sfGains"></div>
+    <p id="sfSuite"></p>
+    <p class="essai" id="sfApercu"></p>
+    <button class="cta" id="sfOk"><b>C'est reparti</b></button>
+  </div>
+</div>
+
 <nav id="onglets" data-ui>
   <button data-onglet="jouer" class="actif"></button><button data-onglet="singes"></button><button data-onglet="boutique"></button><button data-onglet="rangs"></button>
 </nav>
@@ -463,6 +489,6 @@
 <div id="decompte" class="ombre"></div>
 <div id="version"></div>
 <div id="chargement">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=28"></script>
+<script type="module" src="main.js?v=29"></script>
 </body>
 </html>

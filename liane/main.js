@@ -1,17 +1,18 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, ou en direct contre un ami, un classement Elo, des tenues.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js, les dessins de l'interface dans ui.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=28';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=28';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=28';
-import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=28';
-import { chargerPeau, dessinerPeau } from './peau.js?v=28';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=28';
-import { embleme, ICONE, DEFS, compter } from './ui.js?v=28';
-import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=28';
-import { creerScene, jouerScene, TEMPS } from './fin.js?v=28';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=29';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=29';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=29';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=29';
+import { chargerPeau, dessinerPeau } from './peau.js?v=29';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=29';
+import { embleme, ICONE, DEFS, compter } from './ui.js?v=29';
+import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=29';
+import { creerScene, jouerScene, TEMPS } from './fin.js?v=29';
+import { infoSaison, recompenses, bilan, ouvrirSaison, noterSaison } from './saison.js?v=29';
 
-const VERSION = 'v0.16';
+const VERSION = 'v0.17';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -25,6 +26,9 @@ function journal(q) { try { const j = JSON.parse(localStorage.getItem('liane-jou
 let monde = MONDES[clamp(profil.monde | 0, 0, MONDES.length - 1)];
 const ALLURE = { canopee: { ep: 0.1, feuilles: 5 }, aube: { ep: 0.085, feuilles: 6 }, braise: { ep: 0.07, feuilles: 2 }, lune: { ep: 0.12, feuilles: 4 } };
 setPalette(monde.id);
+
+// La saison : si le mois a changé depuis la dernière visite, la saison passée est close ici, avant tout affichage.
+const finSaison = ouvrirSaison();
 
 // ---------- L'écran ----------
 let W = 0, H = 0, S = 1, baseY = 0, D = null, portrait = false, dpr = 1, qualite = 1, ancre = 0.44, vue = 0.44;
@@ -85,7 +89,7 @@ function majInstaller() { $('bInstaller').hidden = installee || !tactile || !!pr
 function avance(elo) { const r = rang(elo); if (!r.suivant) return 1; const bas = r.i ? r.bas : 700; return clamp((elo - bas) / (r.suivant[0] - bas), 0.04, 1); }
 const suite = (elo) => { const r = rang(elo); return r.suivant ? r.suivant[1] + ' dans ' + (r.suivant[0] - elo) + ' pts' : 'rang le plus haut'; };
 const ordinal = (n) => n + (n === 1 ? 'er' : 'e');
-const visage = (e) => `singes/${e.id}-portrait.png?v=28`;
+const visage = (e) => `singes/${e.id}-portrait.png?v=29`;
 function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
   $('aEmb').innerHTML = embleme(r.i, 46); $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom; $('aBarre').style.width = avance(profil.elo) * 100 + '%'; $('aSuite').textContent = suite(profil.elo);
@@ -95,6 +99,7 @@ function majAccueil() {
   $('mInfo').textContent = monde.essai ? 'à l\'essai' : rec ? 'record ' + rec + ' m' : 'niveau ' + (i + 1) + '/' + MONDES.filter((m) => !m.essai).length;
   $('mPoints').innerHTML = MONDES.map((m, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
   const tn = tenueDe(esp); $('aSingeImg').src = visage(esp); $('aSingeNom').textContent = esp.nom; $('aSingeTenue').textContent = tn.id === 'naturel' ? 'ton singe' : tn.nom;
+  { const s = infoSaison(profil.saison.id); $('sNom').textContent = s.nom; $('sReste').innerHTML = (s.jours > 1 ? 'encore ' + s.jours + ' jours' : s.jours === 1 ? 'se termine demain' : 'se termine ce soir') + ' · récompenses'; }
   $('aMise').textContent = monde.essai ? 'entraînement · hors classement' : 'duel classé · ' + monde.nom;
   majInstaller();
 }
@@ -186,7 +191,8 @@ function finir() {
     compter($('fElo'), avant, profil.elo, 1000);
   } else $('fHors').textContent = monde.essai ? 'niveau d\'essai : hors classement' : auto ? 'pilote automatique : hors classement' : 'entraînement : ton Elo ne bouge pas';
   // Ce que la partie a rapporté de plus : un rang, une tenue, une traînée, une série.
-  const plus = []; if (classe) { if (rB.i > rA.i) plus.push('Nouveau rang : ' + rB.nom); if (tenue) plus.push('tenue ' + tenue + ' gagnée'); if (skin) plus.push('traînée ' + skin.nom + ' gagnée'); if (!plus.length && profil.serie >= 2) plus.push(profil.serie + ' victoires de suite'); }
+  const dueSaison = classe ? noterSaison() : null; if (dueSaison) garder();
+  const plus = []; if (classe) { if (dueSaison) plus.push('Saison : ' + dueSaison.medaille.toLowerCase() + (dueSaison.trainee ? ' et traînée ' + dueSaison.trainee.nom : '') + ' assurées'); if (rB.i > rA.i) plus.push('Nouveau rang : ' + rB.nom); if (tenue) plus.push('tenue ' + tenue + ' gagnée'); if (skin) plus.push('traînée ' + skin.nom + ' gagnée'); if (!plus.length && profil.serie >= 2) plus.push(profil.serie + ' victoires de suite'); }
   $('fPlus').textContent = plus.join(' · ').replace(/^./, (c) => c.toUpperCase());
   $('fin').classList.toggle('direct', direct); $('bSuivant').disabled = false; $('bAccueil').textContent = direct ? 'Quitter' : 'Accueil';
   if (direct) majRevanche(); else { $('bSuivant').firstElementChild.textContent = 'Duel suivant'; $('bSuivant').lastElementChild.textContent = monde.essai ? 'hors classement' : 'classé · nouveau rival'; }
@@ -260,6 +266,7 @@ clic('xPartager', () => { if (net && navigator.share) navigator.share({ title: '
 $('xCode').addEventListener('input', () => { $('xCode').value = nettoyerCode($('xCode').value); });
 $('xSinges').addEventListener('click', (e) => { const b = e.target.closest('[data-singe]'); if (!b || net) return; profil.singe = b.dataset.singe; garder(); choisirSinge(profil.singe); scene(hasard(), false); majAccueil(); majDirect(); });
 clic('mPrec', () => changerMonde(-1)); clic('mSuiv', () => changerMonde(1));
+clic('bSaison', () => onglet('rangs', 'saison')); clic('sfOk', () => { $('saisonFin').hidden = true; });
 clic('bSinge', () => onglet('singes')); clic('bProfil', () => onglet('rangs', 'route')); clic('bPlace', () => onglet('rangs', 'monde'));
 clic('onglets', (e) => { const b = e.target.closest('[data-onglet]'); if (b) onglet(b.dataset.onglet); });
 clic('rSeg', (e) => { const b = e.target.closest('[data-seg]'); if (b) { segVu = b.dataset.seg; majSeg(); } });
@@ -272,7 +279,7 @@ function majRangs() {
   $('rMoi').innerHTML = `<span class="emb">${embleme(r.i, 68)}</span><span class="mElo"><b>${profil.elo}</b><em>${r.nom}</em></span><span class="mSuite"><span class="barre"><i style="width:${avance(profil.elo) * 100}%"></i></span><small>${suite(profil.elo)}</small></span>
 <div class="mStats"><div><b>${ordinal(pos)}</b><small>sur ${cl.length}</small></div><div><b>${n}</b><small>duels</small></div><div><b>${n ? Math.round(profil.v / n * 100) + ' %' : '–'}</b><small>victoires</small></div><div><b>${profil.record ? profil.record + ' m' : '–'}</b><small>record</small></div></div>`;
   // Ce que chaque rang donne : les traînées et les tenues qui se gagnent en montant.
-  const gains = [...SKINS.filter((s) => s.seuil > 0).map((s) => ({ seuil: s.seuil, nom: 'Traînée ' + s.nom, ok: possede(s) })),
+  const gains = [...SKINS.filter((s) => s.seuil > 0 && Number.isFinite(s.seuil)).map((s) => ({ seuil: s.seuil, nom: 'Traînée ' + s.nom, ok: possede(s) })),
     ...ESPECES.flatMap((e) => e.tenues.filter((x) => x.elo).map((x) => ({ seuil: x.elo, nom: 'Tenue ' + x.nom, ok: aTenue(e, x) })))].sort((a, b) => a.seuil - b.seuil);
   $('rRoute').innerHTML = RANGS.map(([bas, nom], i) => {
     const haut = RANGS[i + 1] ? RANGS[i + 1][0] : Infinity, etat = i < r.i ? 'fait' : i === r.i ? 'ici' : 'loin';
@@ -283,9 +290,29 @@ function majRangs() {
   $('cPodium').innerHTML = marche(cl[1], 1) + marche(cl[0], 0) + marche(cl[2], 2);
   $('cListe').innerHTML = cl.slice(3).map((c, i) => `<li class="${c.moi ? 'moi' : ''}"><span class="p">${i + 4}</span>${pastille(c)}<span class="n">${c.moi ? 'Toi' : c.nom}</span><span class="emb">${embleme(rang(c.elo).i, 22)}</span><span class="e">${c.elo}</span></li>`).join('');
 }
+// L'onglet Saison : le temps qui reste, ce que donne chaque ligue, et les médailles des saisons passées.
+function majSaison() {
+  const S0 = profil.saison, s = infoSaison(S0.id), haut = rang(S0.haut), R = recompenses(S0.id), pt = (t) => `<i class="pt" style="background:${t.trail2 ? `linear-gradient(90deg, rgb(${t.trail}), rgb(${t.trail2}))` : `rgb(${t.trail})`}"></i>`;
+  let h = `<div class="sTete"><h3>${s.nom} ${s.an}</h3><span class="jours"><b>${s.jours}</b><small>jour${s.jours > 1 ? 's' : ''}</small></span><p>Ta meilleure ligue cette saison : <b style="color:var(--creme)">${haut.nom}</b> (${S0.haut} Elo). C'est elle qui compte pour les récompenses, même si tu redescends ensuite.</p></div>`;
+  h += R.map((r) => {
+    const fait = r.i <= haut.i, bas = RANGS[r.i][0];
+    const g = `<span class="gain ${fait ? 'ok' : ''}">${fait ? ICONE.coche : ICONE.cadenas}${r.medaille}</span>` + (r.trainee ? `<span class="gain ${fait ? 'ok' : ''}">${pt(r.trainee)}Traînée ${r.trainee.nom}${r.trainee.eclat ? ' · étincelles' : r.trainee.trail2 ? ' · dégradé' : ''}</span>` : '');
+    return `<div class="palier ${fait ? (r.i === haut.i ? 'ici' : 'fait') : 'loin'}"><span class="emb">${embleme(r.i, 44)}</span><b>${r.nom}</b><span class="seuil">${r.i ? 'à partir de ' + bas + ' Elo' : 'dès le premier duel'}</span><span class="etat">${fait ? ICONE.coche + 'assuré' : 'encore ' + (bas - S0.haut) + ' pts'}</span><div class="gains">${g}</div></div>`;
+  }).reverse().join('');
+  h += '<div class="sTitre">Ton palmarès</div>' + (profil.palmares.length ? '<div class="medailles">' + profil.palmares.slice().reverse().map((p) => `<div class="medaille"><span class="emb">${embleme(clamp(p.rang | 0, 0, 5), 40)}</span><b>${RANGS[clamp(p.rang | 0, 0, 5)][1]}</b>${infoSaison(p.id).court}</div>`).join('') + '</div>' : '<p class="pied" style="margin-top:0;text-align:left">Ta première saison est en cours : ta médaille arrivera à la fin du mois.</p>');
+  h += `<p class="pied">À la fin de la saison, les récompenses sont données, puis l'Elo de chacun revient à mi-chemin de 800 : tout le monde repart en course en ${s.suivante}. Prototype sans serveur : la saison suit la date de ton téléphone.</p>`;
+  $('rSaison').innerHTML = h;
+}
+// Le bilan d'une saison qui vient de finir. apercu : montré pour l'essai, rien n'est changé.
+function montrerBilan(b, apercu) {
+  $('sfTitre').textContent = b.saison.nom + ' terminée'; $('sfEmb').innerHTML = embleme(b.rang, 76); $('sfRang').textContent = 'meilleure ligue : ' + RANGS[b.rang][1] + ' · ' + b.haut + ' Elo';
+  $('sfGains').innerHTML = `<span class="gain ok">${ICONE.coche}Médaille ${RANGS[b.rang][1]}</span>` + b.trainees.map((t) => `<span class="gain ok">${ICONE.coche}Traînée ${t.nom}</span>`).join('');
+  $('sfSuite').innerHTML = `La ${apercu ? 'saison suivante' : infoSaison(profil.saison.id).nom.toLowerCase()} commence. Les Elo se resserrent : tu repars à <b>${b.apres}</b> (tu étais à ${b.avant}).`;
+  $('sfApercu').textContent = apercu ? 'Aperçu : la saison n\'est pas finie, rien n\'est changé.' : ''; $('saisonFin').hidden = false;
+}
 function majSeg() {
   for (const b of $('rSeg').children) b.classList.toggle('actif', b.dataset.seg === segVu);
-  $('rRoute').hidden = segVu !== 'route'; $('rMonde').hidden = segVu !== 'monde';
+  $('rRoute').hidden = segVu !== 'route'; $('rMonde').hidden = segVu !== 'monde'; $('rSaison').hidden = segVu !== 'saison'; if (segVu === 'saison') majSaison();
 }
 
 // ---------- Les singes : quatre espèces, chacune avec son corps, ses seize points, son geste et son pouvoir ----------
@@ -300,9 +327,9 @@ function majSinges() {
 <div class="sTenues">${tenues}</div><button class="btn ${choisi ? 'creux' : 'plein'}" data-singe="${e.id}" ${choisi ? 'disabled' : ''}>${choisi ? 'Choisi' : 'Choisir'}</button></article>`;
   }).join('');
   $('gListe').scrollLeft = defile;
-  $('sListe').innerHTML = SKINS.map((s) => {
+  $('sListe').innerHTML = SKINS.filter((s) => !s.saison || s.saison === profil.saison.id || possede(s)).map((s) => {
     const ok = possede(s), choisi = profil.skin === s.id;
-    return `<button class="skin ${ok ? '' : 'non'} ${choisi ? 'choisi' : ''}" data-skin="${s.id}"><i style="background:${s.ink};box-shadow:0 0 0 2px ${s.rim}${s.trail ? ', 0 0 18px rgba(' + s.trail + ',.8)' : ''}"></i><b>${s.nom}</b><span>${choisi ? 'portée' : ok ? 'choisir' : ICONE.cadenas + s.seuil + ' Elo'}</span></button>`;
+    return `<button class="skin ${ok ? '' : 'non'} ${choisi ? 'choisi' : ''}" data-skin="${s.id}"><i style="background:${s.ink};box-shadow:0 0 0 2px ${s.rim}${s.trail ? ', 0 0 18px rgba(' + s.trail + ',.8)' : ''}"></i><b>${s.nom}</b><span>${choisi ? 'portée' : ok ? 'choisir' : ICONE.cadenas + (s.saison ? 'rang ' + RANGS[s.palier][1] : s.seuil + ' Elo')}</span></button>`;
   }).join('');
 }
 $('gListe').addEventListener('click', (e) => {
@@ -852,8 +879,11 @@ function frame() {
   if (tc) {
     const long = 2 * (22 + 9 * M.chaine), fort = skin.trail ? 0.4 + 0.15 * M.chaine : 0.2 + 0.2 * M.chaine;
     trail.push(pose.hx, pose.hy); while (trail.length > long) trail.splice(0, 2);
-    ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
-    for (let i = 2; i < trail.length; i += 2) { const k = i / trail.length; ctx.strokeStyle = `rgba(${tc},${fort * k * k})`; ctx.lineWidth = S * 0.26 * k; ctx.beginPath(); ctx.moveTo(X(trail[i - 2]), Y(trail[i - 1])); ctx.lineTo(X(trail[i]), Y(trail[i + 1])); ctx.stroke(); }
+    // Une traînée de saison est peinte en couleur pleine : en lumière ajoutée, ses teintes chaudes se perdraient sur le ciel clair.
+    const pleine = !!skin.saison; ctx.globalCompositeOperation = pleine ? 'source-over' : 'lighter'; ctx.lineCap = 'round';
+    const duo = skin.trail2 ? (skin.duo = skin.duo || [skin.trail.split(',').map(Number), skin.trail2.split(',').map(Number)]) : null;      // traînée de saison : un dégradé le long de la traînée
+    for (let i = 2; i < trail.length; i += 2) { const k = i / trail.length; ctx.strokeStyle = duo ? `rgba(${Math.round(duo[1][0] + (duo[0][0] - duo[1][0]) * k)},${Math.round(duo[1][1] + (duo[0][1] - duo[1][1]) * k)},${Math.round(duo[1][2] + (duo[0][2] - duo[1][2]) * k)},${0.9 * k})` : `rgba(${tc},${pleine ? 0.9 * k : fort * k * k})`; ctx.lineWidth = S * 0.26 * k; ctx.beginPath(); ctx.moveTo(X(trail[i - 2]), Y(trail[i - 1])); ctx.lineTo(X(trail[i]), Y(trail[i + 1])); ctx.stroke(); }
+    if (skin.eclat) for (let i = 6; i < trail.length; i += 8) { const k = i / trail.length, a = Math.max(0, Math.sin(time * 11 + i * 2.3)) * k; if (a < 0.1) continue; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.beginPath(); ctx.arc(X(trail[i]) + Math.sin(i * 7.1) * S * 0.12, Y(trail[i + 1]) + Math.cos(i * 5.3) * S * 0.12, Math.max(1, S * 0.045), 0, TAU); ctx.fill(); }
     ctx.globalCompositeOperation = 'source-over';
   } else if (trail.length) trail.splice(0, 4);
   // Les pouvoirs qui se voient : la queue qui se tend vers la liane, et le singe ami descendu de la canopée avec la sienne.
@@ -946,7 +976,7 @@ $('version').textContent = VERSION;
 // Les dessins de l'interface : dégradés des emblèmes, icônes des onglets et des boutons.
 document.body.insertAdjacentHTML('afterbegin', DEFS);
 { const noms = { jouer: 'Jouer', singes: 'Singes', boutique: 'Boutique', rangs: 'Classement' }; for (const b of $('onglets').children) b.innerHTML = ICONE[b.dataset.onglet] + '<span>' + noms[b.dataset.onglet] + '</span>'; }
-$('iNon').innerHTML = ICONE.croix; $('mPrec').innerHTML = ICONE.retour; $('mSuiv').innerHTML = ICONE.fleche; $('dFermer').innerHTML = ICONE.croix; $('pouvoir').firstElementChild.innerHTML = ICONE.eclair;
+$('bSaison').insertAdjacentHTML('beforeend', ICONE.fleche); $('iNon').innerHTML = ICONE.croix; $('mPrec').innerHTML = ICONE.retour; $('mSuiv').innerHTML = ICONE.fleche; $('dFermer').innerHTML = ICONE.croix; $('pouvoir').firstElementChild.innerHTML = ICONE.eclair;
 window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get net() { return net; }, get scn() { return scn; }, get image() { return { dpr, qualite, fluide }; }, get cadre() { return { x: X(M.x) / W, y: Y(M.y) / H, large: W / S, portrait }; }, profil, CFG, lancer, defier, onglet, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
 journal('page ouverte');
 // Un duel classé était engagé quand la page a été quittée ou rechargée : il compte comme une défaite.
@@ -957,6 +987,7 @@ if (params.get('journal')) { let j = []; try { j = JSON.parse(localStorage.getIt
   const pre = document.createElement('pre'); pre.setAttribute('data-ui', ''); pre.style.cssText = 'position:fixed;inset:0;margin:0;padding:12px;overflow:auto;background:rgba(2,12,16,.94);color:#fff6dc;font:12px/1.5 monospace;z-index:9;touch-action:pan-y;-webkit-user-select:text;user-select:text';
   pre.textContent = 'Journal de LIANE ' + VERSION + ' (les plus récents en bas)\n\n' + j.map(([t, q]) => new Date(t).toLocaleTimeString('fr-FR') + '  ' + q).join('\n'); document.body.appendChild(pre); }
 accueil();
+if (finSaison) montrerBilan(finSaison, false); else if (params.get('bilan')) montrerBilan(bilan(), true);          // ?bilan=1 : voir le bilan de fin de saison sans rien changer
 { const c = nettoyerCode(params.get('duel')); if (c.length === 4) ouvrirDirect(c); }
 if (abandon) { dire('duel quitté en cours : −' + Math.abs(abandon) + ' au classement', true); setTimeout(() => { if (phase === 'accueil') taire(); }, 5000); }
 $('chargement').classList.add('vu');

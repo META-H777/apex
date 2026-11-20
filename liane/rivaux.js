@@ -1,7 +1,7 @@
 // LIANE — les rivaux, le classement Elo, les rangs et les skins.
 // Un duel : même forêt pour les deux, celui qui va le plus loin gagne.
 // Tant qu'il n'y a pas de serveur, les rivaux sont simulés : chacun a son niveau, court vraiment le parcours, et laisse un fantôme.
-import { Jeu, rnd, pilote, MONDES } from './jeu.js?v=28';
+import { Jeu, rnd, pilote, MONDES } from './jeu.js?v=29';
 
 export const PARCOURS = [11, 23, 37, 41, 58, 64, 79, 86];   // les parcours du prototype : chaque numéro donne toujours la même forêt
 
@@ -86,4 +86,6 @@ export function adversaire(e, sauf) { const c = RIVAUX.filter((b) => b !== sauf)
 if (!profil.ecarts || typeof profil.ecarts !== 'object') profil.ecarts = {};
 for (const b of RIVAUX) { const d = profil.ecarts[b.id]; if (Number.isFinite(d)) b.elo = Math.max(100, b.elo + Math.round(d)); }
 export function bouger(b, d) { if (!b || !RIVAUX.includes(b) || !Number.isFinite(d)) return; const avant = b.elo; b.elo = Math.max(100, b.elo + d); profil.ecarts[b.id] = (profil.ecarts[b.id] || 0) + b.elo - avant; }
+// Nouvelle saison : les rivaux simulés retrouvent leur Elo d'origine.
+export function oublierEcarts() { for (const b of RIVAUX) { const d = profil.ecarts[b.id]; if (Number.isFinite(d)) b.elo -= Math.round(d); } profil.ecarts = {}; }
 export function classement() { return [...RIVAUX.map((b) => ({ nom: b.nom, elo: b.elo, skin: b.skin })), { nom: 'toi', elo: profil.elo, skin: profil.skin, moi: true }].sort((a, b) => b.elo - a.elo); }
