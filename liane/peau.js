@@ -1,7 +1,7 @@
 // LIANE — la peau du singe : les pièces peintes d'un singe (une planche faite avec Higgsfield, découpée par liane/outils/decoupe.py)
 // posées sur le squelette de singe.js. Le mouvement reste celui du jeu ; seule l'apparence vient de l'image.
 // Un singe = deux fichiers dans singes/ : <nom>.png (l'atlas) et <nom>.json (où est chaque pièce, et ses deux points d'articulation a et b).
-import { K } from './singe.js?v=12';
+import { K } from './singe.js?v=13';
 
 const NIV = 4;                                             // l'atlas est gardé à quatre tailles, pour rester net quand le singe est petit à l'écran
 function toile(src, w, h, voile) {
@@ -11,7 +11,7 @@ function toile(src, w, h, voile) {
   return c;
 }
 
-export function chargerPeau(nom, v = '12') {
+export function chargerPeau(nom, v = '13') {
   const peau = { nom, pret: false, f: null, clair: [], sombre: [], poil: '#4a2a1c' };
   const image = new Promise((ok, non) => { const im = new Image(); im.onload = () => ok(im); im.onerror = non; im.src = `singes/${nom}.png?v=${v}`; });
   Promise.all([fetch(`singes/${nom}.json?v=${v}`).then((r) => r.json()), image]).then(([f, im]) => {

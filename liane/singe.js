@@ -9,7 +9,7 @@
 //  - Le saut : corps à l'horizontale, ventre vers le bas, les deux bras tendus devant, les jambes derrière, la queue dans le prolongement.
 //  - À la saisie, la main arrive la première ; le corps, lancé, passe dessous comme un poids ; la queue vient reprendre la liane.
 //  - Proportions mesurées sur les films : bras (main comprise) 1,35 fois le tronc, jambe 1 fois, queue 1,5 fois, tronc épais, petite tête ronde.
-import { CFG } from './jeu.js?v=12';
+import { CFG } from './jeu.js?v=13';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k, TAU = Math.PI * 2;
 const lisse = (k) => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
@@ -26,7 +26,7 @@ export const PERCHE = 1.52 * K;
 export function corps() {
   return { mode: null, tS: 9, tA: 9, alt: 1, bras: 0, brasV: 0, tronc: -0.4, troncV: 0, flex: 0.4, flexV: 0,
     cuisse: [0.9, 1.1], cuisseV: [0, 0], genou: [1.8, 1.9], genouV: [0, 0], h2: [0.2, 0.5], regard: 0, pret: 0, pas: 0, haut: -0.5,
-    ax: 0, ay: 0, pvx: 0, pvy: 0, pv: false, bas: 0, qtient: 0, mains: 1, squash: 0, queue: null, qbx: 0, qby: 0, ox: 0, oy: 0, rx: null, ry: 0 };
+    ax: 0, ay: 0, pvx: 0, pvy: 0, pv: false, bas: 0, qtient: 0, mains: 1, squash: 0, queue: null, qbx: 0, qby: 0, ox: 0, oy: 0, rx: null, ry: 0, qui: 1, ech: 1 };
 }
 
 // Coude ou genou : le point milieu d'un membre à deux os entre a et b ; renvoie aussi le bout réellement atteint.
@@ -41,7 +41,7 @@ function joint(ax, ay, bx, by, l1, l2, side) {
 //       tend : le doigt est posé, il tend les bras ; attend : avant le premier geste ; tremplin : une feuille est sous lui.
 export function poseSinge(M, B, dt, env = {}) {
   const sw = M.mode === 'swing', C = CFG;
-  if (B.mode !== M.mode) { if (B.mode) { if (sw) { B.tS = 0; B.alt = -B.alt; } else B.tA = 0; } B.mode = M.mode; }
+  if (B.mode !== M.mode) { if (B.mode) { if (sw) { B.tS = 0; B.alt = -B.alt; } else { B.tA = 0; if (B.mode === 'swing') { B.qui = 1 - B.qui; B.ech = 0; } } } B.mode = M.mode; }
   const n = Math.max(1, Math.ceil(dt * 120 - 1e-6)), h = dt / n;
   // La pesanteur ressentie par le corps : la vraie, moins l'accélération des mains. Sur la liane elle tire dans l'axe de la corde ; en vol elle est nulle.
   if (dt > 0) {
@@ -129,8 +129,16 @@ export function poseSinge(M, B, dt, env = {}) {
     c2 = [lerp(libre[0], px + ux * 0.26 * K - sx, k), lerp(libre[1], py + uy * 0.26 * K - sy, k)];
   } else { const a = -0.1 + 0.45 * pente + 0.2 * approche, l = ALLONGE * (0.94 + 0.04 * approche); c2 = [Math.cos(a) * l, Math.sin(a) * l]; }   // déjà pointé vers l'avant : c'est lui qui mène
   { const k = dt > 0 ? Math.min(1, dt * (sw ? 16 : 20)) : 0; B.h2[0] += (c2[0] - B.h2[0]) * k; B.h2[1] += (c2[1] - B.h2[1]) * k; }
+  // Il change de main à chaque liane, comme un vrai singe qui brachie : au lâcher, la main qui tenait devient la main libre et l'autre,
+  // déjà tendue devant, devient celle qui saisira. Les deux bras échangent leur place en un cinquième de seconde, pendant le vol.
+  // bras[0] est le bras de devant (côté spectateur), bras[1] celui du fond ; B.qui dit lequel tient, ou va saisir.
+  if (dt > 0) B.ech = Math.min(1, B.ech + dt / 0.2);
+  const ke = lisse(B.ech), cl = sw ? 1 : -1, tient = [px - sx, py - sy, -1], libre = [B.h2[0], B.h2[1], cl], cibles = [];
+  cibles[B.qui] = [lerp(libre[0], tient[0], ke), lerp(libre[1], tient[1], ke), lerp(libre[2], tient[2], ke)];
+  cibles[1 - B.qui] = [lerp(tient[0], libre[0], ke), lerp(tient[1], libre[1], ke), lerp(tient[2], libre[2], ke)];
   const bras = [];
-  for (const [gx0, gy0, cote] of [[sx + B.h2[0], sy + B.h2[1], sw ? 1 : -1], [px, py, -1]]) {
+  for (const [rx0, ry0, cote] of cibles) {
+    const gx0 = sx + rx0, gy0 = sy + ry0;
     const e = joint(sx, sy, gx0, gy0, BRAS, PRISE, cote), dx = e[2] - e[0], dy = e[3] - e[1], d = Math.hypot(dx, dy) || 1;
     bras.push([e[0], e[1], e[0] + dx / d * AVANT, e[1] + dy / d * AVANT, e[2], e[3], dx / d, dy / d]);     // coude, poignet, creux des doigts, direction de la main
   }
