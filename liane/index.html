@@ -83,6 +83,12 @@
   #direct .feuille > b { font-size:18px; font-weight:600; }
   #direct input { font:inherit; font-size:17px; color:var(--creme); background:rgba(255,246,220,.07); border:1px solid var(--trait); border-radius:14px; height:50px; padding:0 14px; box-sizing:border-box; min-width:0; outline:none; -webkit-user-select:text; user-select:text; touch-action:manipulation; }
   #direct input:focus { border-color:var(--or); } #direct input::placeholder { color:var(--pale); }
+  /* Le singe du duel se choisit ici même : quatre portraits, celui qui joue est entouré d'or */
+  #xSinges { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; }
+  #xSinges button { display:flex; flex-direction:column; align-items:center; gap:5px; padding:7px 2px 8px; border-radius:16px; border:1px solid var(--trait); background:rgba(255,246,220,.04); font-size:11px; color:var(--doux); min-width:0; transition:transform .12s, border-color .2s, background .2s; }
+  #xSinges button:active { transform:scale(.95); } #xSinges button.choisi { border-color:var(--or); color:var(--creme); background:rgba(255,217,138,.12); font-weight:500; }
+  #xSinges img { width:48px; height:48px; border-radius:14px; object-fit:contain; background:radial-gradient(120% 90% at 50% 25%, #f6e9b8 0%, #bfe0cf 45%, #4f9c95 100%); }
+  #xSinges span { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #xChoix, #xAttente { align-self:stretch; display:flex; flex-direction:column; gap:10px; align-items:stretch; } #xChoix[hidden], #xAttente[hidden], #xPartager[hidden] { display:none; }
   .champ { display:flex; align-items:center; gap:12px; } .champ span { font-size:12.5px; color:var(--doux); white-space:nowrap; } .champ input { flex:1; }
   #direct .cta { margin-top:0; } .ou { font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--pale); margin-top:2px; }
@@ -302,7 +308,7 @@
   @media (orientation:landscape) and (max-height:520px) {
     #chrono { font-size:34px; } #crans { top:calc(var(--st) + 54px); }
     .fCarte { width:min(100%, 760px); flex-direction:row; align-items:center; gap:28px; } .fG, .fD { flex:1; } .fG { gap:9px; } #fTemps { font-size:min(88px, 26vh); }
-    #xChoix > p { display:none; } #direct .feuille { margin-top:calc(var(--st) + 8px); max-height:calc(100% - var(--st) - 16px); gap:7px; padding-top:14px; } #direct .essai { font-size:11px; padding:7px 10px; } #xCodeVu { font-size:44px; }
+    #xSinges img { width:34px; height:34px; border-radius:11px; } #xSinges button { flex-direction:row; justify-content:center; gap:7px; padding:5px 4px; } #direct .feuille { margin-top:calc(var(--st) + 8px); max-height:calc(100% - var(--st) - 16px); gap:7px; padding-top:14px; } #direct .essai { font-size:11px; padding:7px 10px; } #xCodeVu { font-size:44px; }
     #duel { gap:10px; } .vsCote { padding:10px 8px; } .vsCote img, .avatar { width:62px; height:62px; border-radius:20px; } .avatar { font-size:27px; }
     .singe { flex-basis:min(74vw, 560px); display:grid; grid-template-columns:1fr 1fr; column-gap:16px; align-items:start; } .singe .sHaut, .singe .sTenues, .singe .btn { grid-column:1 / -1; } .sHaut img { width:68px; height:68px; }
     .fInfo h3 { font-size:22px; } .une { min-height:150px; }
@@ -432,7 +438,7 @@
   <div class="feuille">
     <b id="xTitre">Duel en direct</b>
     <div id="xChoix">
-      <p>Même forêt, départ ensemble. Le premier qui tombe a perdu.</p>
+      <div id="xSinges" aria-label="ton singe pour ce duel"></div>
       <label class="champ"><span>Ton pseudo</span><input id="xPseudo" maxlength="12" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="facultatif"></label>
       <button class="cta" id="xCreer"><b>Créer une partie</b></button>
       <span class="ou">ou rejoins la sienne</span>
@@ -457,6 +463,6 @@
 <div id="decompte" class="ombre"></div>
 <div id="version"></div>
 <div id="chargement">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=27"></script>
+<script type="module" src="main.js?v=28"></script>
 </body>
 </html>

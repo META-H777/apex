@@ -1,17 +1,17 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, ou en direct contre un ami, un classement Elo, des tenues.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js, les dessins de l'interface dans ui.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=27';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=27';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=27';
-import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=27';
-import { chargerPeau, dessinerPeau } from './peau.js?v=27';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=27';
-import { embleme, ICONE, DEFS, compter } from './ui.js?v=27';
-import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=27';
-import { creerScene, jouerScene, TEMPS } from './fin.js?v=27';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=28';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=28';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=28';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=28';
+import { chargerPeau, dessinerPeau } from './peau.js?v=28';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=28';
+import { embleme, ICONE, DEFS, compter } from './ui.js?v=28';
+import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=28';
+import { creerScene, jouerScene, TEMPS } from './fin.js?v=28';
 
-const VERSION = 'v0.15';
+const VERSION = 'v0.16';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -85,7 +85,7 @@ function majInstaller() { $('bInstaller').hidden = installee || !tactile || !!pr
 function avance(elo) { const r = rang(elo); if (!r.suivant) return 1; const bas = r.i ? r.bas : 700; return clamp((elo - bas) / (r.suivant[0] - bas), 0.04, 1); }
 const suite = (elo) => { const r = rang(elo); return r.suivant ? r.suivant[1] + ' dans ' + (r.suivant[0] - elo) + ' pts' : 'rang le plus haut'; };
 const ordinal = (n) => n + (n === 1 ? 'er' : 'e');
-const visage = (e) => `singes/${e.id}-portrait.png?v=27`;
+const visage = (e) => `singes/${e.id}-portrait.png?v=28`;
 function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
   $('aEmb').innerHTML = embleme(r.i, 46); $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom; $('aBarre').style.width = avance(profil.elo) * 100 + '%'; $('aSuite').textContent = suite(profil.elo);
@@ -258,6 +258,7 @@ clic('xCreer', () => { if (!net) brancher(nouveauCode(), true); });
 clic('xRejoindre', () => { if (net) return; const c = nettoyerCode($('xCode').value); $('xCode').value = c; if (c.length === 4) brancher(c, false); else { $('xCode').focus(); } });
 clic('xPartager', () => { if (net && navigator.share) navigator.share({ title: 'LIANE', text: 'Rejoins mon duel LIANE avec le code ' + net.code, url: location.origin + location.pathname + '?duel=' + net.code }).catch(() => {}); });
 $('xCode').addEventListener('input', () => { $('xCode').value = nettoyerCode($('xCode').value); });
+$('xSinges').addEventListener('click', (e) => { const b = e.target.closest('[data-singe]'); if (!b || net) return; profil.singe = b.dataset.singe; garder(); choisirSinge(profil.singe); scene(hasard(), false); majAccueil(); majDirect(); });
 clic('mPrec', () => changerMonde(-1)); clic('mSuiv', () => changerMonde(1));
 clic('bSinge', () => onglet('singes')); clic('bProfil', () => onglet('rangs', 'route')); clic('bPlace', () => onglet('rangs', 'monde'));
 clic('onglets', (e) => { const b = e.target.closest('[data-onglet]'); if (b) onglet(b.dataset.onglet); });
@@ -470,7 +471,8 @@ function adopter(p) { const L = net.lui = lireFiche(p); net.peauLui = sansPeau ?
 function calque() { const n = Math.round(S * 9); if (!calqueLui) calqueLui = document.createElement('canvas'); if (calqueLui.width !== n) calqueLui.width = calqueLui.height = n; return calqueLui; }
 function majDirect() {
   const a = !!net; $('xChoix').hidden = a; $('xAttente').hidden = !a; $('xTitre').textContent = !a ? 'Duel en direct' : net.hote ? 'Ta partie est ouverte' : 'Tu rejoins la partie';
-  if (!a) return;
+  // Avant de créer ou de rejoindre : le singe qui jouera ce duel, avec la tenue qu'il porte.
+  if (!a) { $('xSinges').innerHTML = ESPECES.map((e) => `<button data-singe="${e.id}" class="${e.id === esp.id ? 'choisi' : ''}"><img src="${visage(e)}" alt=""><span>${e.id === 'araignee' ? 'Araignée' : e.nom.split(/[ -]/)[0]}</span></button>`).join(''); return; }
   $('xLegende').textContent = net.hote ? 'Donne ce code à ton adversaire' : 'Le code de sa partie'; $('xCodeVu').textContent = net.code; $('xPartager').hidden = !net.hote || !navigator.share;
   const long = performance.now() / 1000 - net.depuis > 9;
   $('xEtat').textContent = !net.lien.ouverts ? (long ? 'pas de liaison : vérifie ta connexion' : 'connexion au relais…') : net.lui ? net.lui.nom + ' arrive…' : net.hote ? 'en attente de ton adversaire…' : long ? 'aucune partie ouverte avec ce code pour l\'instant' : 'recherche de la partie…';
