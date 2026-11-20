@@ -129,6 +129,11 @@
   .medailles { display:flex; flex-wrap:wrap; gap:10px; } .medaille { display:flex; flex-direction:column; align-items:center; gap:4px; padding:12px 14px; border-radius:18px; border:1px solid var(--trait); background:var(--carte2); font-size:11px; color:var(--doux); } .medaille b { font-size:13px; color:var(--creme); font-weight:500; }
   #saisonFin .feuille { gap:10px; } #saisonFin h3 { margin:0; font-size:20px; font-weight:600; } #sfRang { font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--or); font-weight:500; }
   #sfGains { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; } #sfSuite b { color:var(--creme); font-weight:600; } #sfApercu:empty { display:none; }
+  /* Les danses de victoire : leur rayon dans la boutique, et la feuille où on les voit dansées */
+  .article.danse canvas, #dnVue { background:radial-gradient(120% 90% at 50% 22%, #1d5257 0%, #0c3036 55%, #082328 100%); }
+  #danseFiche .feuille { gap:8px; } #dnVue { width:100%; height:min(300px, 36vh); border-radius:18px; display:block; }
+  #dnNom { font-size:20px; font-weight:600; margin-top:4px; } #dnFermer { height:40px; font-size:12.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--doux); }
+  .sElo.on.efface { opacity:.16; }
   #installe ol { margin:0; padding:0 0 0 20px; text-align:left; font-size:14px; line-height:1.6; color:var(--creme); align-self:stretch; } #installe b { font-size:18px; font-weight:600; }
 
   /* ---------- Les onglets ---------- */
@@ -434,7 +439,7 @@
 <div id="dAchat" class="voile" data-ui hidden>
   <div class="feuille">
     <span id="aTitre"></span><b id="aPrix"></b><p id="aDetail"></p>
-    <p class="essai">Boutique en essai : rien n'est encaissé. Confirmer note ton intention d'achat et te prête la tenue.</p>
+    <p class="essai">Boutique en essai : rien n'est encaissé. Confirmer note ton intention d'achat et te prête l'article.</p>
     <button class="cta" id="aOui"><b>Confirmer l'essai</b></button><button id="aNon">Annuler</button>
   </div>
 </div>
@@ -469,6 +474,14 @@
   </div>
 </div>
 
+<div id="danseFiche" class="voile" data-ui hidden>
+  <div class="feuille">
+    <canvas id="dnVue"></canvas>
+    <b id="dnNom"></b><p id="dnTexte"></p>
+    <button class="cta" id="dnAction"><b id="dnBouton"></b></button><button id="dnFermer">Fermer</button>
+  </div>
+</div>
+
 <div id="saisonFin" class="voile" data-ui hidden>
   <div class="feuille">
     <h3 id="sfTitre"></h3>
@@ -489,6 +502,6 @@
 <div id="decompte" class="ombre"></div>
 <div id="version"></div>
 <div id="chargement">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=29"></script>
+<script type="module" src="main.js?v=30"></script>
 </body>
 </html>

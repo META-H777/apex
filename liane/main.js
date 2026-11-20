@@ -1,18 +1,18 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, ou en direct contre un ami, un classement Elo, des tenues.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js, les dessins de l'interface dans ui.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=29';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=29';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=29';
-import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=29';
-import { chargerPeau, dessinerPeau } from './peau.js?v=29';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=29';
-import { embleme, ICONE, DEFS, compter } from './ui.js?v=29';
-import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=29';
-import { creerScene, jouerScene, TEMPS } from './fin.js?v=29';
-import { infoSaison, recompenses, bilan, ouvrirSaison, noterSaison } from './saison.js?v=29';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=30';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=30';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=30';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=30';
+import { chargerPeau, dessinerPeau } from './peau.js?v=30';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=30';
+import { embleme, ICONE, DEFS, compter } from './ui.js?v=30';
+import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=30';
+import { creerScene, jouerScene, TEMPS, DANSES, danseDe, creerApercu, jouerApercu } from './fin.js?v=30';
+import { infoSaison, recompenses, bilan, ouvrirSaison, noterSaison } from './saison.js?v=30';
 
-const VERSION = 'v0.17';
+const VERSION = 'v0.18';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -89,7 +89,7 @@ function majInstaller() { $('bInstaller').hidden = installee || !tactile || !!pr
 function avance(elo) { const r = rang(elo); if (!r.suivant) return 1; const bas = r.i ? r.bas : 700; return clamp((elo - bas) / (r.suivant[0] - bas), 0.04, 1); }
 const suite = (elo) => { const r = rang(elo); return r.suivant ? r.suivant[1] + ' dans ' + (r.suivant[0] - elo) + ' pts' : 'rang le plus haut'; };
 const ordinal = (n) => n + (n === 1 ? 'er' : 'e');
-const visage = (e) => `singes/${e.id}-portrait.png?v=29`;
+const visage = (e) => `singes/${e.id}-portrait.png?v=30`;
 function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
   $('aEmb').innerHTML = embleme(r.i, 46); $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom; $('aBarre').style.width = avance(profil.elo) * 100 + '%'; $('aSuite').textContent = suite(profil.elo);
@@ -204,7 +204,7 @@ function finir() {
     const h = direct ? { e: net.lui.e, x: net.lui.x } : habitDe(rival), dLui = !classe ? 0 : direct ? elo(rival.elo, avant, !gagne) : elo(rival.elo, avant, !gagne), luiAvant = rival.elo;
     if (classe && !direct) { bouger(rival, dLui); garder(); }
     if (direct) { net.dLui = null; net.lien.envoyer({ k: 'elo', d, apres: profil.elo }); }
-    scn = creerScene({ corps: esp.corps, peau, encre: skinById(profil.skin).ink }, { corps: h.e.corps, peau: sansPeau ? null : peauDe(h.e, h.x), encre: skinById(rival.skin).ink }, gagne);
+    scn = creerScene({ corps: esp.corps, peau, encre: skinById(profil.skin).ink, danse: profil.danse }, { corps: h.e.corps, peau: sansPeau ? null : peauDe(h.e, h.x), encre: skinById(rival.skin).ink, danse: direct ? net.lui.danse : h.danse }, gagne);
     eloFin = { dit: false, avant, apres: profil.elo, d, luiAvant, dLui, direct, classe };
     $('fin').classList.add('scene'); for (const id of ['sMoi', 'sLui']) $(id).classList.remove('on');
     $('sMoiEmb').innerHTML = embleme(rA.i, 24); $('sMoiElo').textContent = avant; $('sMoiD').textContent = ''; $('sMoiSuite').textContent = '';
@@ -365,11 +365,15 @@ function majBoutique() {
   const article = (a) => `<button class="article" data-fiche="${a.cle}"><canvas class="f-${a.x.rarete}" data-vig="${a.cle}"></canvas><em class="tag r-${a.x.rarete}">${a.x.theme || RARETES[a.x.rarete]}</em><span class="aTxt"><b>${a.x.nom}</b><small>${a.e.nom}</small>${prixDe(a.e, a.x)}</span></button>`;
   const rayon = (titre, liste) => liste.length ? `<h3>${titre}</h3><div class="grille">${liste.map(article).join('')}</div>` : '';
   h += rayon('En boutique', reste.filter((a) => a.x.prix)) + rayon('À gagner au classement', reste.filter((a) => a.x.elo));
+  // Les danses de victoire : celle que le gagnant fait à la fin d'un duel. Certaines se gagnent au classement, d'autres s'achètent.
+  h += '<h3>Danses de victoire</h3><div class="grille">' + DANSES.map((d) => `<button class="article danse" data-danse="${d.id}"><canvas data-dvig="${d.id}"></canvas><em class="tag ${d.prix ? 'r-rare' : d.elo ? 'r-epique' : 'r-commune'}">${d.prix ? 'Danse' : d.elo ? 'Classement' : 'Offerte'}</em><span class="aTxt"><b>${d.nom}</b><small>danse de victoire</small>${prixDanse(d)}</span></button>`).join('') + '</div>';
   $('bqCorps').innerHTML = h;
+  for (const c of $('bqCorps').querySelectorAll('canvas[data-dvig]')) vignetteDanse(c, danseDe(c.dataset.dvig));
   for (const c of $('bqCorps').querySelectorAll('canvas[data-vig]')) vignette(c, ...trouver(c.dataset.vig));
 }
 $('bqCorps').addEventListener('click', (e) => {
   const f = e.target.closest('[data-fiche]'); if (f) { ouvrirFiche(...trouver(f.dataset.fiche)); return; }
+  const dn = e.target.closest('[data-danse]'); if (dn) { ouvrirDanse(dn.dataset.danse); return; }
   const b = e.target.closest('[data-pack]'); if (!b || b.disabled) return; const p = PACKS.find((x) => x.id === b.dataset.pack);
   demander({ id: 'pack:' + p.id, titre: p.nom + ' · ' + p.tenues.length + ' tenues', prix: p.prix, cles: p.tenues, detail: p.tenues.map((c) => trouver(c)[1].nom).join(' · ') });
 });
@@ -398,10 +402,40 @@ function majFiche() {
   else txt.textContent = 'Acheter · ' + euros(x.prix);
 }
 // La boutique est en essai : rien n'est encaissé. Confirmer note l'intention d'achat (sur l'appareil) et prête la tenue.
+// ---------- Les danses de victoire : à qui elles sont, leur vignette, la feuille où on les voit dansées ----------
+if (!Array.isArray(profil.danses)) profil.danses = [];
+// Une danse est à soi si elle est offerte, si le classement l'a donnée (elle reste acquise ensuite), ou si elle a été prise à la boutique.
+function aDanse(d) { if (!d.elo && !d.prix) return true; if (profil.danses.includes(d.id)) return true; if (d.elo && profil.elo >= d.elo) { profil.danses.push(d.id); garder(); return true; } return false; }
+if (typeof profil.danse !== 'string' || !aDanse(danseDe(profil.danse))) profil.danse = DANSES[0].id;
+const prixDanse = (d) => aDanse(d) ? `<span class="prix ok">${ICONE.coche}${profil.danse === d.id ? 'choisie' : 'à toi'}</span>` : d.elo ? `<span class="prix">${ICONE.cadenas}rang ${rangDe(d.elo)}</span>` : `<span class="prix">${euros(d.prix)}</span>`;
+const danseur = () => ({ corps: esp.corps, peau, encre: '#0b1d16' });
+// Où poser le singe dans une image de w sur h : plus bas et plus petit quand la danse passe au-dessus des mains.
+const cadreDanse = (d, w, h) => d.haut ? { cx: w / 2, y0: h * 0.52, Z: Math.min(h * 0.45 / 2.9, w / 6.2) } : { cx: w / 2, y0: h * 0.2, Z: Math.min(h * 0.7 / 2.9, w / 4.2) };
+function vignetteDanse(c, d) {
+  const [w, h] = taille(c); if (!w || !h) return; const g = c.getContext('2d'), ap = creerApercu(danseur(), d.id); ap.t = Math.max(0, d.vig - 0.6);
+  for (let i = 0; i < 36; i++) { g.clearRect(0, 0, w, h); jouerApercu(g, ap, 1 / 60, cadreDanse(d, w, h), '#0b1d16'); }
+}
+let dnVue = null, dnRaf = 0, dnAp = null, dnLast = 0;
+function ouvrirDanse(id) {
+  dnVue = danseDe(id); dnAp = creerApercu(danseur(), dnVue.id); $('danseFiche').hidden = false; majDanse(); dnLast = performance.now(); cancelAnimationFrame(dnRaf);
+  const tour = (now) => { if (!dnVue) return; dnRaf = requestAnimationFrame(tour); const c = $('dnVue'), [w, h] = taille(c), dt = Math.min(0.05, (now - dnLast) / 1000); dnLast = now; if (!w || !h) return; const g = c.getContext('2d'); g.clearRect(0, 0, w, h); jouerApercu(g, dnAp, dt, cadreDanse(dnVue, w, h), '#0b1d16'); };
+  dnRaf = requestAnimationFrame(tour);
+}
+function fermerDanse() { dnVue = null; dnAp = null; cancelAnimationFrame(dnRaf); dnRaf = 0; $('danseFiche').hidden = true; }
+function majDanse() {
+  const d = dnVue, a = aDanse(d), choisie = profil.danse === d.id; $('dnNom').textContent = d.nom; $('dnTexte').textContent = d.texte + ' Le gagnant la danse à la fin du duel, devant son adversaire.';
+  $('dnBouton').textContent = choisie ? 'C\'est ta danse' : a ? 'Choisir cette danse' : d.elo ? 'Rang ' + rangDe(d.elo) + ' requis · ' + d.elo + ' Elo' : 'Acheter · ' + euros(d.prix); $('dnAction').disabled = choisie || (!a && !!d.elo);
+}
+function agirDanse() {
+  const d = dnVue; if (!d) return;
+  if (aDanse(d)) { profil.danse = d.id; garder(); majDanse(); if (ongletVu === 'boutique') majBoutique(); return; }
+  if (d.prix) { fermerDanse(); demander({ id: 'danse:' + d.id, titre: 'Danse de victoire · ' + d.nom, prix: d.prix, cles: [], danse: d.id, detail: d.texte }); }
+}
 function demander(a) { achat = a; $('aTitre').textContent = a.titre; $('aPrix').textContent = euros(a.prix); $('aDetail').textContent = a.detail || ''; $('dAchat').hidden = false; }
 function rafraichir() { if (ficheOuverte()) majFiche(); if (ongletVu === 'singes') majSinges(); else if (ongletVu === 'boutique') majBoutique(); }
 function confirmer() {
   if (!achat) return;
+  if (achat.danse) { if (!profil.danses.includes(achat.danse)) profil.danses.push(achat.danse); profil.danse = achat.danse; }      // une danse achetée est prêtée pendant l'essai, et choisie tout de suite
   const D = profil.dressing; D.intentions.push({ quoi: achat.id, prix: achat.prix, quand: new Date().toISOString().slice(0, 16) });
   for (const cle of achat.cles) {
     if (!D.possede.includes(cle)) D.possede.push(cle);
@@ -418,6 +452,7 @@ function agir() {
   demander({ id: cleTenue(e, x), titre: x.nom + ' · ' + e.nom, prix: x.prix, cles: [cleTenue(e, x)],
     detail: ed ? (ed.type === 'unique' ? 'Exemplaire unique : un seul joueur au monde la portera.' : `Édition limitée à ${ed.total} exemplaires numérotés, jusqu'au ${dateFr(ed.fin)}.`) : '' });
 }
+clic('dnFermer', () => fermerDanse()); clic('dnAction', () => agirDanse());
 clic('dAction', () => agir()); clic('dFermer', () => fermerFiche()); clic('aOui', () => confirmer()); clic('aNon', () => { $('dAchat').hidden = true; achat = null; });
 // Le singe pendu à une liane, dessiné dans un canevas quelconque : la fiche (qui bouge) et les vignettes de la boutique (posées une fois).
 function pendu(g, w, h, Bq, pk, pas, temps, cadre, zoom = 1) {
@@ -486,12 +521,12 @@ choisirSinge(params.get('singe') && !sansPeau ? params.get('singe') : profil.sin
 // L'Elo se calcule sur chaque téléphone : sans serveur, rien ne l'empêche d'être truqué. C'est un prototype.
 const PROTO = 1, SILENCE = 8;                            // version des messages ; secondes sans nouvelles avant de considérer l'adversaire parti
 const propre = (v) => String(v || '').replace(/[<>&"'`\\]/g, '').trim().slice(0, 12);
-const maFiche = () => ({ nom: propre(profil.pseudo), elo: profil.elo, singe: esp.id, tenue: tenueDe(esp).id, skin: profil.skin });
+const maFiche = () => ({ nom: propre(profil.pseudo), elo: profil.elo, singe: esp.id, tenue: tenueDe(esp).id, skin: profil.skin, danse: profil.danse });
 // Ce que l'autre téléphone dit de son joueur n'est jamais cru sur parole : tout est remis dans les bornes du jeu.
 function lireFiche(p) {
   p = p && typeof p === 'object' ? p : {};
   const e = ESPECES.find((x) => x.id === p.singe) || ESPECES[0], x = e.tenues.find((y) => y.id === p.tenue) || e.tenues[0];
-  return { nom: propre(p.nom) || 'Ton rival', elo: clamp(Math.round(+p.elo) || 800, 100, 4000), e, x, skin: skinById(p.skin).id };
+  return { nom: propre(p.nom) || 'Ton rival', elo: clamp(Math.round(+p.elo) || 800, 100, 4000), e, x, skin: skinById(p.skin).id, danse: danseDe(p.danse).id };
 }
 function adopter(p) { const L = net.lui = lireFiche(p); net.peauLui = sansPeau ? null : peauDe(L.e, L.x); rival = { id: -1, nom: L.nom, elo: L.elo, skin: L.skin }; }
 // Une petite toile à part : le singe adverse y est dessiné entier, puis posé à demi transparent sur la forêt.
@@ -635,9 +670,10 @@ addEventListener('pagehide', () => { if (net && net.luiDe) net.lien.envoyer({ k:
 
 // ---------- La scène de fin de duel (fin.js) : où elle se place à l'écran, et les compteurs d'Elo au-dessus des singes ----------
 // Téléphone debout : la scène occupe le haut de l'écran, le résultat est en bas. Couché : la scène à gauche, le résultat à droite.
-function cadreScene() { const w = portrait ? W : W * 0.54, h = portrait ? H * 0.6 : H, Z = Math.min(w / 6.4, h * 0.62 / 3); return { cx: portrait ? W / 2 : W * 0.27, y0: h * (portrait ? 0.4 : 0.43), Z, W, H }; }
+// Quand la danse du gagnant fait passer son corps au-dessus de ses mains, on recule un peu : il lui faut de la place autour de lui.
+function cadreScene(large = scn && scn.A[scn.g].danse.haut) { const w = portrait ? W : W * 0.54, h = portrait ? H * 0.6 : H, Z = Math.min(w / (large ? 8.6 : 6.4), h * 0.62 / (large ? 3.6 : 3)); return { cx: portrait ? W / 2 : W * 0.27, y0: h * (portrait ? 0.4 : 0.43), Z, W, H }; }
 // Un rival simulé a lui aussi son espèce et, pour un sur trois, une tenue : toujours les mêmes pour un même rival.
-function habitDe(b) { const e = ESPECES[b.id % ESPECES.length], n = e.tenues.length; return { e, x: e.tenues[n > 1 && b.id % 3 === 0 ? 1 + (b.id % (n - 1)) : 0] }; }
+function habitDe(b) { const e = ESPECES[b.id % ESPECES.length], n = e.tenues.length; return { e, x: e.tenues[n > 1 && b.id % 3 === 0 ? 1 + (b.id % (n - 1)) : 0], danse: DANSES[(b.id * 5 + 2) % DANSES.length].id }; }
 function montrerElo(c) {
   const E = eloFin; E.dit = true; if (E.direct && net && net.dLui !== null && E.classe) E.dLui = net.dLui;
   const signe = (d) => (d >= 0 ? '+' : '−') + Math.abs(d); placerElo(c);
@@ -648,7 +684,7 @@ function montrerElo(c) {
 }
 // Les compteurs se posent au-dessus des mains de chaque singe, assez haut pour que le geste de victoire ne passe pas dessus.
 function placerElo(c) { const px = dpr; $('sMoi').style.left = (c.cx - 1.55 * c.Z) / px + 'px'; $('sLui').style.left = (c.cx + 1.55 * c.Z) / px + 'px'; $('sMoi').style.top = $('sLui').style.top = Math.max(portrait ? 62 : 44, c.y0 / px - 122) + 'px'; }
-function finScene() { scn = null; eloFin = null; $('fin').classList.remove('scene'); for (const id of ['sMoi', 'sLui']) $(id).classList.remove('on'); }
+function finScene() { scn = null; eloFin = null; $('fin').classList.remove('scene'); for (const id of ['sMoi', 'sLui']) $(id).classList.remove('on', 'efface'); }
 
 // La branche du départ : le singe y attend, la liane en main, avant de se laisser partir.
 function drawPerche() {
@@ -958,6 +994,7 @@ function frame() {
   if (scn) {
     const c = cadreScene(); jouerScene(ctx, scn, real * (window.LIANE.lent || 1), c, PAL.ink);          // lent : un ralenti, pour les mises au point
     if (!eloFin.dit && scn.t >= TEMPS.elo) montrerElo(c);
+    if (scn.haut !== eloFin.haut) { eloFin.haut = scn.haut; $(scn.g === 0 ? 'sMoi' : 'sLui').classList.toggle('efface', scn.haut); }      // la danse passe devant le compteur du gagnant : il s'efface un instant
   }
 
   // En course : la ligne du haut, de ton départ jusqu'au repère du rival. Les deux points avancent dessus.
@@ -978,6 +1015,10 @@ document.body.insertAdjacentHTML('afterbegin', DEFS);
 { const noms = { jouer: 'Jouer', singes: 'Singes', boutique: 'Boutique', rangs: 'Classement' }; for (const b of $('onglets').children) b.innerHTML = ICONE[b.dataset.onglet] + '<span>' + noms[b.dataset.onglet] + '</span>'; }
 $('bSaison').insertAdjacentHTML('beforeend', ICONE.fleche); $('iNon').innerHTML = ICONE.croix; $('mPrec').innerHTML = ICONE.retour; $('mSuiv').innerHTML = ICONE.fleche; $('dFermer').innerHTML = ICONE.croix; $('pouvoir').firstElementChild.innerHTML = ICONE.eclair;
 window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get net() { return net; }, get scn() { return scn; }, get image() { return { dpr, qualite, fluide }; }, get cadre() { return { x: X(M.x) / W, y: Y(M.y) / H, large: W / S, portrait }; }, profil, CFG, lancer, defier, onglet, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
+// Pour les mises au point : la danse ouverte dans la boutique, montrée à l'instant t de sa boucle (l'animation ne tourne pas quand la fenêtre est cachée).
+window.LIANE.voirDanse = (t) => { if (!dnVue) return; cancelAnimationFrame(dnRaf); const c = $('dnVue'), [w, h] = taille(c), g = c.getContext('2d'); dnAp = creerApercu(danseur(), dnVue.id); dnAp.t = Math.max(0, t - 0.8); for (let i = 0; i < 48; i++) { g.clearRect(0, 0, w, h); jouerApercu(g, dnAp, 1 / 60, cadreDanse(dnVue, w, h), '#0b1d16'); } };
+// Même chose pour la scène de fin : toi gagnant, avec la danse donnée, à l'instant t de la scène.
+window.LIANE.voirScene = (id, t, g = ctx) => { const q = { corps: esp.corps, peau, encre: '#0b1d16', danse: id }, s = creerScene(q, q, true), c = cadreScene(!!danseDe(id).haut); while (s.t < t - 1 / 60) jouerScene(g, s, 1 / 60, c, PAL.ink); g.fillStyle = '#0c2a30'; g.fillRect(0, 0, W, H); jouerScene(g, s, 1 / 60, c, PAL.ink); return s.haut; };
 journal('page ouverte');
 // Un duel classé était engagé quand la page a été quittée ou rechargée : il compte comme une défaite.
 let abandon = 0;

@@ -1,7 +1,7 @@
 // LIANE — les rivaux, le classement Elo, les rangs et les skins.
 // Un duel : même forêt pour les deux, celui qui va le plus loin gagne.
 // Tant qu'il n'y a pas de serveur, les rivaux sont simulés : chacun a son niveau, court vraiment le parcours, et laisse un fantôme.
-import { Jeu, rnd, pilote, MONDES } from './jeu.js?v=29';
+import { Jeu, rnd, pilote, MONDES } from './jeu.js?v=30';
 
 export const PARCOURS = [11, 23, 37, 41, 58, 64, 79, 86];   // les parcours du prototype : chaque numéro donne toujours la même forêt
 
