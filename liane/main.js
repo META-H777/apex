@@ -1,15 +1,15 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des tenues.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js, les dessins de l'interface dans ui.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=24';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=24';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=24';
-import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=24';
-import { chargerPeau, dessinerPeau } from './peau.js?v=24';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=24';
-import { embleme, ICONE, DEFS, compter } from './ui.js?v=24';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=25';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=25';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=25';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=25';
+import { chargerPeau, dessinerPeau } from './peau.js?v=25';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=25';
+import { embleme, ICONE, DEFS, compter } from './ui.js?v=25';
 
-const VERSION = 'v0.12';
+const VERSION = 'v0.13';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -51,7 +51,7 @@ let Ba = null, chargeVue = -1, pouvoirT = 0, dRaf = 0, dT = 0, dLast = 0, Bp = n
 const X = (x) => (x - camX) * S + W * vue, Y = (y) => baseY - y * S + camDy;
 const hasard = () => (Math.random() * 1e9) | 0;
 function scene(seed, nuit) { jeu = new Jeu(seed, nuit, monde, esp.regles); jeu.aides = true; M = jeu.M; B = corps(morpho(esp.corps)); perche.x = M.x; perche.y = M.y - B.m.PERCHE; pil = { gout: 0.9 }; camX = M.x + 3; camLead = 3; trail.length = 0; rings.length = 0; mortT = 0; arcVu = null; unTour = true; }
-const dire = (txt) => { $('note').textContent = txt; $('note').classList.remove('vu'); };
+const dire = (txt, milieu = false) => { $('note').textContent = txt; $('note').classList.toggle('milieu', milieu); $('note').classList.remove('vu'); };   // milieu : à l'accueil, au-dessus des boutons
 const taire = () => $('note').classList.add('vu');
 // Le bouton du pouvoir : un anneau qui se remplit, s'allume quand le pouvoir est chargé, et disparaît une fois qu'il a servi.
 function majPouvoir() {
@@ -80,7 +80,7 @@ function majInstaller() { $('bInstaller').hidden = installee || !tactile || !!pr
 function avance(elo) { const r = rang(elo); if (!r.suivant) return 1; const bas = r.i ? r.bas : 700; return clamp((elo - bas) / (r.suivant[0] - bas), 0.04, 1); }
 const suite = (elo) => { const r = rang(elo); return r.suivant ? r.suivant[1] + ' dans ' + (r.suivant[0] - elo) + ' pts' : 'rang le plus haut'; };
 const ordinal = (n) => n + (n === 1 ? 'er' : 'e');
-const visage = (e) => `singes/${e.id}-portrait.png?v=24`;
+const visage = (e) => `singes/${e.id}-portrait.png?v=25`;
 function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
   $('aEmb').innerHTML = embleme(r.i, 46); $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom; $('aBarre').style.width = avance(profil.elo) * 100 + '%'; $('aSuite').textContent = suite(profil.elo);
@@ -603,6 +603,7 @@ function frame() {
   // Le plan du jeu : le feuillage du haut, les lianes, le fantôme du rival, l'arc doré, le singe, la cime du bas.
   drawTile(ctx, D.top.c, D.TW, camX * S, D.top.y + camDy, W);
   if (D.top.y + camDy > -S * 2) { ctx.fillStyle = PAL.play.bot; ctx.fillRect(0, 0, W, Math.ceil(D.top.y + camDy + S * 2)); }      // au-dessus : l'épaisseur du feuillage
+  if (D.rangs) for (const R of D.rangs.haut) drawTile(ctx, R.c, D.TW, camX * S * R.par, R.y + camDy * R.par, W);                // téléphone debout : la canopée continue jusqu'en haut de l'écran
   drawTremplins(dt);
   const pose = poseSinge(M, B, dt, autour(M, M.mode === 'swing' ? M.li : null));
   if (phase !== 'accueil') drawPerche();
@@ -661,6 +662,23 @@ function frame() {
   ctx.globalAlpha = 1;
   drawTile(ctx, D.floor.c, D.TW, camX * S, D.floor.y + camDy, W);
   ctx.fillStyle = PAL.play.bot; ctx.fillRect(0, D.floor.y + D.floor.h + camDy - 1, W, H);
+  // Téléphone debout : sous les cimes, la forêt descend. Deux rangs de feuillage, une nappe de brume entre eux, les rayons du soleil qui tombent dedans, et des lucioles en haut comme en bas.
+  if (D.rangs) {
+    for (const R of D.rangs.bas) {
+      const y = R.y + camDy * R.par, g = ctx.createLinearGradient(0, y - S * 2, 0, y + S * 7); g.addColorStop(0, `rgba(${PAL.mist},0)`); g.addColorStop(0.4, `rgba(${PAL.mist},${0.13 + 0.03 * Math.sin(time * 0.3 + R.par * 9)})`); g.addColorStop(1, `rgba(${PAL.mist},0)`);
+      ctx.fillStyle = g; ctx.fillRect(0, y - S * 2, W, S * 9);
+      drawTile(ctx, R.c, D.TW, camX * S * R.par, y, W);
+    }
+    const y0 = Math.max(0, Math.round(D.floor.y + camDy + S * 2.5));
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.4 + 0.1 * Math.sin(time * 0.23); ctx.drawImage(D.rays, 0, y0, W, H - y0, 0, y0, W, H - y0);
+    for (let i = 0; i < flies.length; i++) {
+      const f = flies[i], par = f.par + 0.45, yb = i % 2 ? -1.6 - f.y * 1.15 : 15.6 + f.y * 1.1, span = W / S + 8;
+      const a = Math.max(0, Math.sin(time * 0.6 * f.sp + f.ph + 1.7)) ** 2; if (a < 0.02) continue;
+      const fx = ((((f.x * 1.7 + Math.sin(time * 0.3 * f.sp + f.ph) * 0.8 - camX * par) % span) + span) % span - 4) * S, fy = baseY - (yb + Math.sin(time * 0.5 * f.sp + f.ph * 2) * 0.5) * S + camDy * par, sz = S * 0.4 * f.s;
+      ctx.globalAlpha = a * 0.8; ctx.drawImage(D.dot, fx - sz, fy - sz, sz * 2, sz * 2);
+    }
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
 
   // La nuit : un voile sombre qui avance depuis la gauche. Quand il touche le singe, c'est fini.
   if (jeu.nuit.on) {
@@ -705,6 +723,6 @@ if (params.get('journal')) { let j = []; try { j = JSON.parse(localStorage.getIt
   const pre = document.createElement('pre'); pre.setAttribute('data-ui', ''); pre.style.cssText = 'position:fixed;inset:0;margin:0;padding:12px;overflow:auto;background:rgba(2,12,16,.94);color:#fff6dc;font:12px/1.5 monospace;z-index:9;touch-action:pan-y;-webkit-user-select:text;user-select:text';
   pre.textContent = 'Journal de LIANE ' + VERSION + ' (les plus récents en bas)\n\n' + j.map(([t, q]) => new Date(t).toLocaleTimeString('fr-FR') + '  ' + q).join('\n'); document.body.appendChild(pre); }
 accueil();
-if (abandon) { dire('duel quitté en cours : −' + Math.abs(abandon) + ' au classement'); setTimeout(() => { if (phase === 'accueil') taire(); }, 5000); }
+if (abandon) { dire('duel quitté en cours : −' + Math.abs(abandon) + ' au classement', true); setTimeout(() => { if (phase === 'accueil') taire(); }, 5000); }
 $('chargement').classList.add('vu');
 frame();

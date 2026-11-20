@@ -1,6 +1,6 @@
 // LIANE — le décor : tout est dessiné par le code, en silhouettes et en lumière. Aucune image, aucun film.
 // Chaque plan de forêt est peint une fois dans une bande qui se répète, puis glisse à sa propre vitesse.
-import { rnd } from './jeu.js?v=24';
+import { rnd } from './jeu.js?v=25';
 
 const TAU = Math.PI * 2;
 
@@ -129,6 +129,10 @@ function fronds(g, x, by, S, r) {
   g.fill();
 }
 
+// Mélange de deux couleurs écrites en #rrggbb.
+const hexa = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+const mel = (a, b, k) => { const A = hexa(a), B = hexa(b); return 'rgb(' + A.map((v, i) => Math.round(v + (B[i] - v) * k)).join(',') + ')'; };
+
 function makeTile(TW, TH, draw, colTop, colBot, y0, y1) {
   const c = document.createElement('canvas'); c.width = TW; c.height = TH; const g = c.getContext('2d');
   g.fillStyle = g.strokeStyle = '#000';
@@ -212,6 +216,34 @@ export function buildDecor(W, H, S, baseY, seed = 7) {
       }
       for (let i = 0; i < 7; i++) { g.save(); g.translate(TW * (i + r()) / 7, edge - S * 0.5); g.scale(1, -1); fronds(g, 0, 0, S * 0.8, r); g.restore(); }
     }, PAL.play.bot, PAL.play.top, 0, th) };
+
+  // Téléphone debout : le jeu est une bande au milieu de l'écran. Au-dessus, l'épaisseur de la canopée ; en dessous, la forêt qui descend.
+  // Deux rangs de feuillage de chaque côté, de plus en plus proches, grands et sombres vers les bords de l'écran : ils défilent plus vite que le plan du jeu.
+  D.rangs = null;
+  if (tTop > S * 4) {
+    const noir = '#000000', pb = PAL.play.bot, pt = PAL.play.top, clair = mel(pt, PAL.layers[3].top, 0.55), marge = Math.ceil(S * 4);   // clair : le bord d'un feuillage qui prend la lumière
+    // Un feuillage vu d'en dessous : plein en haut, festonné en bas. bord : la hauteur à l'écran de son bord bas.
+    const haut = (ech, bord, graine, c0, c1) => { const k = S * ech, e = Math.ceil(marge + bord), h = Math.ceil(e + k * 2.8);
+      return { y: -marge, h, c: makeTile(TW, h, (g) => { const r = rnd(graine), ph = r() * TAU;
+        g.beginPath();
+        for (let x = -k * 2; x < TW + k * 2; x += k * (0.5 + r() * 0.7)) { const dip = 0.5 + 0.5 * Math.sin(x / TW * TAU * 3 + ph), y = e - k * (0.7 + dip) - r() * k * 0.5; blob(g, x, y, k * (0.65 + r() * 0.75)); if (r() < 0.4) blob(g, x + (r() - 0.5) * k, y - k * 0.6, k * 0.8); }
+        g.rect(-k * 2, -10, TW + k * 4, e - k * 1.5 + 10); g.fill();
+        g.lineCap = 'round';
+        for (let x = 0; x < TW; x += k * (1.6 + r() * 3)) { const ll = k * (0.6 + r() * 1.6), sw = (r() - 0.5) * k * 0.5, y0 = e - k * 0.9; g.lineWidth = Math.max(1, k * 0.04); g.beginPath(); g.moveTo(x, y0); g.quadraticCurveTo(x + sw, y0 + ll * 0.6, x + sw * 0.5, y0 + ll); g.stroke(); }
+        for (let i = 0; i < 6; i++) { g.save(); g.translate(TW * (i + r()) / 6, e - k * 0.7); g.scale(1, -1); fronds(g, 0, 0, k * 0.8, r); g.restore(); }
+      }, c0, c1, e - k * 5, e + k * 0.4) }; };
+    // Des cimes vues de près : crêtes rondes, pleines en dessous. crete : la hauteur à l'écran de leurs crêtes.
+    const bas = (ech, crete, graine, c0, c1) => { const k = S * ech, y = Math.floor(crete - k * 2.4), h = Math.ceil(H - y + marge);
+      return { y, h, c: makeTile(TW, h, (g) => { const r = rnd(graine), by = k * 2.4;
+        for (let i = 0; i < 7; i++) fronds(g, TW * (i + r()) / 7, by - k * (0.2 + r() * 0.5), k, r);
+        for (let i = 0; i < 2; i++) palm(g, TW * (i + r()) / 2, by + k * 0.6, k * (2 + r() * 1.2), r);
+        canopy(g, TW, h, by, k * 0.75, k * 0.85, r, 5); }, c0, c1, k * 1.2, k * 6.5) }; };
+    const c1 = fTop + fh * 0.74;
+    D.rangs = {
+      haut: [{ ...haut(1.5, tTop + S * 1.4, seed + 31, mel(pb, noir, 0.35), clair), par: 1.14 }, { ...haut(2.4, tTop * 0.46, seed + 32, mel(pb, noir, 0.75), mel(pb, pt, 0.6)), par: 1.32 }],
+      bas: [{ ...bas(1.5, c1, seed + 33, clair, mel(pb, noir, 0.4)), par: 1.14 }, { ...bas(2.4, c1 + (H - c1) * 0.4, seed + 34, mel(pb, noir, 0.3), mel(pb, noir, 0.75)), par: 1.32 }],
+    };
+  }
 
   // Trois grandes feuilles floues, pour le tout premier plan.
   D.near = [0, 1, 2].map((k) => { const n = 72, c = document.createElement('canvas'); c.width = c.height = n; const g = c.getContext('2d'), r = rnd(seed + 20 + k);

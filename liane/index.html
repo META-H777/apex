@@ -114,6 +114,7 @@
   #ecart { top:calc(var(--st) + 22vh); } #ecart.avance { color:var(--vert); } #ecart.retard { color:var(--rouge); }
   #nuit { top:auto; bottom:calc(var(--sb) + 22vh); color:#cfe3ff; }
   #note { position:fixed; z-index:4; left:50%; bottom:calc(var(--sb) + 11vh); transform:translateX(-50%); padding:9px 18px; border-radius:99px; background:rgba(3,22,26,.72); font-size:12.5px; letter-spacing:.14em; text-transform:uppercase; font-weight:500; white-space:nowrap; pointer-events:none; transition:opacity .35s; }
+  #note.milieu { bottom:auto; top:calc(var(--st) + 31vh); font-size:11px; }
   /* Le pouvoir du singe : un bouton rond, à part du geste de jeu. L'anneau se remplit ; plein, il s'allume. */
   #pouvoir { position:absolute; right:calc(var(--sr) + 16px); bottom:calc(var(--sb) + 18vh); width:78px; touch-action:none; display:flex; flex-direction:column; align-items:center; gap:6px; opacity:.6; transition:opacity .3s, transform .3s; }
   #pouvoir i { display:grid; place-items:center; width:62px; height:62px; border-radius:50%; color:var(--pale); background:radial-gradient(closest-side, rgba(3,22,26,.82) 78%, transparent 80%), conic-gradient(var(--or) calc(var(--c, 0) * 360deg), rgba(255,246,220,.2) 0); }
@@ -392,6 +393,6 @@
 <div id="note" class="ombre vu"></div>
 <div id="version"></div>
 <div id="chargement">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=24"></script>
+<script type="module" src="main.js?v=25"></script>
 </body>
 </html>
