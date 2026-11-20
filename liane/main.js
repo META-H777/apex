@@ -1,15 +1,16 @@
-// LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des tenues.
+// LIANE — le jeu : un duel de distance contre le fantôme d'un rival, ou en direct contre un ami, un classement Elo, des tenues.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js, les dessins de l'interface dans ui.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=25';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=25';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=25';
-import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=25';
-import { chargerPeau, dessinerPeau } from './peau.js?v=25';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=25';
-import { embleme, ICONE, DEFS, compter } from './ui.js?v=25';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=26';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=26';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=26';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=26';
+import { chargerPeau, dessinerPeau } from './peau.js?v=26';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=26';
+import { embleme, ICONE, DEFS, compter } from './ui.js?v=26';
+import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=26';
 
-const VERSION = 'v0.13';
+const VERSION = 'v0.14';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -46,6 +47,7 @@ let parcours = PARCOURS[0], rival = null, G = null, Bg = null, t = 0, mortT = 0,
 let classe = false, parti = false, aLever = false, appuiFrais = false;     // duel classé ou non ; premier geste fait ; un lever de doigt en attente du prochain pas
 let accueilT = -9, aide = 9, arcVu = null, arcT = 0, cransVus = -1, distVue = -1, nuitVue = '', fluide = 0.016, mesureT = 0;
 let attendVu = false, lancement = false, vsPret = false, vsFin = 0, conseil = '', ongletVu = 'jouer', segVu = 'route', pisteMoi = -1, pisteLui = -1;
+let net = null, veilleur = 0, calqueLui = null;     // le duel en direct : la liaison avec l'autre téléphone, quand il y en a une
 const Mg = {}, Ma = {}, trail = [], rings = [], perche = { x: 0, y: 0 };
 let Ba = null, chargeVue = -1, pouvoirT = 0, dRaf = 0, dT = 0, dLast = 0, Bp = null;
 const X = (x) => (x - camX) * S + W * vue, Y = (y) => baseY - y * S + camDy;
@@ -80,7 +82,7 @@ function majInstaller() { $('bInstaller').hidden = installee || !tactile || !!pr
 function avance(elo) { const r = rang(elo); if (!r.suivant) return 1; const bas = r.i ? r.bas : 700; return clamp((elo - bas) / (r.suivant[0] - bas), 0.04, 1); }
 const suite = (elo) => { const r = rang(elo); return r.suivant ? r.suivant[1] + ' dans ' + (r.suivant[0] - elo) + ' pts' : 'rang le plus haut'; };
 const ordinal = (n) => n + (n === 1 ? 'er' : 'e');
-const visage = (e) => `singes/${e.id}-portrait.png?v=25`;
+const visage = (e) => `singes/${e.id}-portrait.png?v=26`;
 function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
   $('aEmb').innerHTML = embleme(r.i, 46); $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom; $('aBarre').style.width = avance(profil.elo) * 100 + '%'; $('aSuite').textContent = suite(profil.elo);
@@ -121,30 +123,32 @@ function accueil() {
 // ---------- Lancer une partie ----------
 // Le bouton Jouer annonce d'abord le duel : toi, ton rival, ce que vaut la partie. Puis la forêt s'ouvre.
 function defier(source) {
-  if (lancement || (phase !== 'accueil' && phase !== 'fin')) return;
+  if (lancement || net || (phase !== 'accueil' && phase !== 'fin')) return;
   if (auto) { lancer(false, source); return; }
   pleinEcran(); lancement = true; vsPret = false; fermerFiche();
   parcours = PARCOURS[(Math.random() * PARCOURS.length) | 0]; rival = adversaire(profil.elo, rival);
   const cl = !monde.essai, rm = rang(profil.elo), rl = rang(rival.elo), tr = skinById(rival.skin).trail;
   $('vTitre').textContent = (cl ? 'duel classé' : 'entraînement') + ' · ' + (monde.essai ? 'tremplins' : monde.nom);
   $('vMoiImg').src = visage(esp); $('vMoiEmb').innerHTML = embleme(rm.i, 22); $('vMoiElo').textContent = profil.elo; $('vMoiRang').textContent = rm.nom;
-  $('vLuiAv').textContent = rival.nom[0]; $('vLuiAv').style.setProperty('--c', tr ? `rgb(${tr})` : 'rgba(255,246,220,.35)');
+  $('vLuiAv').textContent = rival.nom[0]; $('vLuiAv').style.setProperty('--c', tr ? `rgb(${tr})` : 'rgba(255,246,220,.35)'); $('vRegle').textContent = 'même forêt pour vous deux · le plus loin gagne';
   $('vLuiNom').textContent = rival.nom; $('vLuiEmb').innerHTML = embleme(rl.i, 22); $('vLuiElo').textContent = rival.elo; $('vLuiRang').textContent = rl.nom;
   $('vMise').innerHTML = cl ? `<span class="plus">Victoire +${gain(profil, rival.elo, true)}</span><span class="moins">Défaite −${Math.abs(gain(profil, rival.elo, false))}</span>` : '<span>Hors classement : ton Elo ne bouge pas</span>';
   $('duel').classList.add('on'); $('onglets').classList.add('cache'); $('accueil').classList.remove('on'); $('fin').classList.remove('on', 'pret');
   // La course du rival se calcule pendant l'annonce : la partie démarre ensuite sans à-coup.
   setTimeout(() => { lancer(false, source, true); vsPret = true; vsFin = setTimeout(fermerVs, 1900); }, 90);
 }
-function fermerVs() { if (!vsPret) return; clearTimeout(vsFin); vsPret = false; lancement = false; $('duel').classList.remove('on'); $('hud').classList.add('on'); if (phase === 'course' && M.idle) dire(conseil); }
+// En direct, l'annonce ne se passe pas d'un geste : les deux téléphones doivent partir ensemble. Elle se ferme seule, puis vient le décompte.
+function fermerVs(force) { if (!vsPret || (net && force !== true)) return; clearTimeout(vsFin); vsPret = false; lancement = false; $('duel').classList.remove('on'); $('hud').classList.add('on'); if (net) decompter(3); else if (phase === 'course' && M.idle) dire(conseil); }
 // Un duel classé se joue contre un nouveau rival. Rejouer le même parcours contre le même rival est un entraînement : l'Elo ne bouge pas.
 // Le niveau d'essai et le pilote automatique ne comptent jamais. choisi : le rival et le parcours viennent d'être tirés par l'annonce.
 function lancer(rejouer, source = 'code', choisi = false) {
   rejouer = rejouer && !!rival; journal((rejouer ? 'entraînement lancé : ' : 'duel lancé : ') + source); $('fin').classList.remove('pret'); doigts.clear(); aLever = appuiFrais = false;
   if (!rejouer && !choisi) { parcours = PARCOURS[(Math.random() * PARCOURS.length) | 0]; rival = adversaire(profil.elo, rival); }
   classe = !rejouer && !auto && !monde.essai; parti = false; gel = false;
-  G = fantome(parcours, rival, monde); Bg = corps(); scene(parcours, true);
-  eveil(true); phase = 'course'; t = 0; depasse = false; ecartT = -9; distVue = -1; nuitVue = ''; pisteMoi = pisteLui = -1; majCrans(0); chargeVue = -2; pouvoirT = 0; $('pNom').textContent = esp.pouvoir.nom; majPouvoir();
-  aide = profil.v + profil.d < 3 ? 0 : 9;                // les premières parties, le jeu dit quoi faire, liane après liane
+  if (net) { G = { rival, dist: 0, temps: 0, direct: true }; Bg = corps(morpho(net.lui.e.corps)); net.etape = 'course'; } else { G = fantome(parcours, rival, monde); Bg = corps(); }
+  scene(parcours, true);
+  eveil(true); phase = 'course'; t = 0; depasse = !!net; ecartT = -9; distVue = -1; nuitVue = ''; pisteMoi = pisteLui = -1; majCrans(0); chargeVue = -2; pouvoirT = 0; $('pNom').textContent = esp.pouvoir.nom; majPouvoir();
+  aide = profil.v + profil.d < 3 ? (net ? 1 : 0) : 9;    // les premières parties, le jeu dit quoi faire, liane après liane
   for (const id of ['accueil', 'fin', ...PANNEAUX]) $(id).classList.remove('on'); fermerFiche();
   $('onglets').classList.add('cache'); $('hud').classList.toggle('on', !choisi); $('chrono').textContent = '0'; $('ecart').className = 'bulle'; $('nuit').classList.remove('on');
   // La distance du rival ne s'affiche qu'une fois parti : on ne choisit pas ses adversaires.
@@ -153,17 +157,25 @@ function lancer(rejouer, source = 'code', choisi = false) {
 }
 // La partie est finie : celui qui est allé le plus loin gagne.
 function finir() {
-  const dist = Math.round(Math.max(0, M.x)), lui = Math.round(G.dist), gagne = dist > lui, avant = profil.elo, d = classe ? gain(profil, rival.elo, gagne) : 0, rA = rang(avant);
+  const direct = !!(net && G.direct), dist = Math.round(Math.max(0, M.x)); let croise = false;
+  if (direct) {            // le premier tombé a perdu ; tombés en même temps, le plus loin gagne
+    const L = net.mortLui; croise = !!L && net.issue !== 'gagne';
+    if (net.issue !== 'gagne') net.issue = L && (L.cause === 'parti' || M.x > L.x) ? 'gagne' : 'perdu';
+    if (L) G.dist = L.x; net.etape = 'fin'; net.finT = 0; clearTimeout(net.compte);
+    if (net.issue === 'gagne' && !M.mort) { net.lien.envoyer({ k: 'fin', x: dist }); jeu.nuit.on = false; }      // le gagnant dit où il s'est arrêté, et son singe continue sa promenade
+  }
+  const lui = Math.round(G.dist), gagne = direct ? net.issue === 'gagne' : dist > lui, avant = profil.elo, d = classe ? gain(profil, rival.elo, gagne) : 0, rA = rang(avant);
   if (classe) { profil.elo = Math.max(100, profil.elo + d); if (gagne) { profil.v++; profil.serie = (profil.serie | 0) + 1; } else { profil.d++; profil.serie = 0; } profil.enCours = null; }
   profil.records = profil.records || {}; const rec = dist > (profil.records[monde.id] || 0); if (rec) profil.records[monde.id] = dist;
   profil.record = Math.max(profil.record || 0, dist);
-  garder(); phase = 'fin'; eveil(false); vibre(gagne ? [14, 70, 14, 70, 40] : 30); taire(); journal('fin : ' + (M.mort === 'nuit' ? 'nuit' : 'chute') + ' à ' + dist + ' m');
+  garder(); phase = 'fin'; eveil(direct); vibre(gagne ? [14, 70, 14, 70, 40] : 30); taire(); journal('fin' + (direct ? ' en direct (' + (gagne ? 'gagné' : 'perdu') + ')' : '') + ' : ' + (M.mort === 'nuit' ? 'nuit' : M.mort ? 'chute' : 'debout') + ' à ' + dist + ' m');
   const skin = acquerir().pop(), rB = rang(profil.elo); if (skin) garder();
   const tenue = classe ? ESPECES.flatMap((e) => e.tenues.filter((x) => x.elo && avant < x.elo && profil.elo >= x.elo && aTenue(e, x)).map((x) => x.nom))[0] : null;
   $('fTitre').textContent = gagne ? 'Victoire' : 'Défaite'; $('fin').classList.toggle('perdu', !gagne);
   compter($('fTemps'), 0, dist, 700);
   $('fMoi').textContent = dist + ' m'; $('fLui').textContent = lui + ' m'; $('fLuiNom').textContent = rival.nom; $('fbMoi').style.width = $('fbLui').style.width = '0%';
-  $('fCause').textContent = (M.mort === 'nuit' ? 'rattrapé par la nuit' : 'tombé') + ' · ' + (rec ? 'nouveau record' : 'record ' + profil.records[monde.id] + ' m');
+  const cL = direct && net.mortLui ? net.mortLui.cause : '', sort = direct && gagne ? (croise ? 'tombés ensemble, toi plus loin' : rival.nom + (cL === 'nuit' ? ' rattrapé par la nuit' : cL === 'parti' ? ' a quitté le duel' : ' est tombé')) : croise ? 'tombés ensemble, ' + rival.nom + ' plus loin' : direct && net.absent ? 'duel fini pendant ton absence' : M.mort === 'nuit' ? 'rattrapé par la nuit' : 'tombé';
+  $('fCause').textContent = croise || (direct && net.absent) ? sort : sort + ' · ' + (rec ? 'nouveau record' : 'record ' + profil.records[monde.id] + ' m');
   $('fEloBloc').classList.toggle('hors', !classe);
   if (classe) {
     $('fEmb').innerHTML = embleme(rB.i, 40); $('fRang').textContent = rB.nom; $('fDelta').textContent = (d >= 0 ? '+' : '−') + Math.abs(d); $('fDelta').classList.toggle('baisse', d < 0); $('fSuite').textContent = suite(profil.elo);
@@ -173,7 +185,8 @@ function finir() {
   // Ce que la partie a rapporté de plus : un rang, une tenue, une traînée, une série.
   const plus = []; if (classe) { if (rB.i > rA.i) plus.push('Nouveau rang : ' + rB.nom); if (tenue) plus.push('tenue ' + tenue + ' gagnée'); if (skin) plus.push('traînée ' + skin.nom + ' gagnée'); if (!plus.length && profil.serie >= 2) plus.push(profil.serie + ' victoires de suite'); }
   $('fPlus').textContent = plus.join(' · ').replace(/^./, (c) => c.toUpperCase());
-  $('bSuivant').lastElementChild.textContent = monde.essai ? 'hors classement' : 'classé · nouveau rival';
+  $('fin').classList.toggle('direct', direct); $('bSuivant').disabled = false; $('bAccueil').textContent = direct ? 'Quitter' : 'Accueil';
+  if (direct) majRevanche(); else { $('bSuivant').firstElementChild.textContent = 'Duel suivant'; $('bSuivant').lastElementChild.textContent = monde.essai ? 'hors classement' : 'classé · nouveau rival'; }
   $('hud').classList.remove('on'); $('fin').classList.add('on');
   const max = Math.max(dist, lui, 1);
   requestAnimationFrame(() => requestAnimationFrame(() => { $('fbMoi').style.width = dist / max * 100 + '%'; $('fbLui').style.width = lui / max * 100 + '%'; $('fBarre').style.transition = ''; $('fBarre').style.width = avance(profil.elo) * 100 + '%'; }));
@@ -184,6 +197,7 @@ function finir() {
 // ---------- Les commandes : un seul doigt ----------
 function hold(h) {
   if (phase !== 'course' || M.mort) return;
+  if (net && !net.go) return;                            // en direct, rien ne bouge avant « Partez »
   if (h && M.idle) {
     if (aide === 0) { aide = 1; dire('lâche dans l\'arc doré'); } else taire();
   }
@@ -203,25 +217,33 @@ const leve = (e) => { doigts.delete(e.pointerId); if (!doigts.size) hold(false);
 addEventListener('pointerup', leve);
 addEventListener('pointercancel', (e) => { journal('doigt annulé par le système'); leve(e); });
 addEventListener('blur', () => { doigts.clear(); hold(false); });
-document.addEventListener('visibilitychange', () => { journal(document.hidden ? 'page masquée' : 'page affichée'); if (!document.hidden && phase === 'course') eveil(true); });
+document.addEventListener('visibilitychange', () => { journal(document.hidden ? 'page masquée' : 'page affichée'); if (!document.hidden && (phase === 'course' || net)) eveil(true); if (!document.hidden && net) net.lien.reveiller(); });
 addEventListener('contextmenu', (e) => e.preventDefault());
+const saisie = (e) => e.target && e.target.tagName === 'INPUT';       // on écrit dans un champ : le clavier ne commande pas le jeu
 addEventListener('keydown', (e) => {
-  if (e.code === 'Escape') { if (!$('dAchat').hidden) { $('dAchat').hidden = true; achat = null; } else fermerFiche(); return; }
+  if (saisie(e)) { if (e.code === 'Enter' || e.key === 'Enter') { e.preventDefault(); if (e.target.id === 'xCode') $('xRejoindre').click(); else e.target.blur(); } return; }
+  if (e.code === 'Escape') { if (!$('direct').hidden) { quitterDirect(); fermerDirect(); } else if (!$('dAchat').hidden) { $('dAchat').hidden = true; achat = null; } else fermerFiche(); return; }
   if (e.code !== 'Space' || e.repeat) return; e.preventDefault();
+  if (!$('direct').hidden) return;
   if (vsPret) fermerVs();
   else if (phase === 'accueil') { if (ongletVu === 'jouer' && time - accueilT > 0.5) defier('clavier'); }
-  else if (phase === 'fin') { if ($('fin').classList.contains('pret')) lancer(true, 'clavier'); }
+  else if (phase === 'fin') { if ($('fin').classList.contains('pret')) { if (net) revanche(); else lancer(true, 'clavier'); } }
   else hold(true);
 });
 addEventListener('keyup', (e) => { if (e.code === 'Space') hold(false); });
-addEventListener('keydown', (e) => { if (!e.repeat && (e.code === 'KeyX' || e.code === 'ShiftLeft' || e.code === 'ShiftRight')) pouvoir('clavier'); });
+addEventListener('keydown', (e) => { if (!saisie(e) && !e.repeat && (e.code === 'KeyX' || e.code === 'ShiftLeft' || e.code === 'ShiftRight')) pouvoir('clavier'); });
 $('pouvoir').addEventListener('pointerdown', (e) => { e.preventDefault(); pouvoir('bouton'); });
 const clic = (id, fn) => $(id).addEventListener('click', (e) => { e.stopPropagation(); fn(e); });
 const pret = () => $('fin').classList.contains('pret');
 clic('iOui', () => { if (invite) { const i = invite; invite = null; i.prompt(); i.userChoice.then(() => majInstaller(), () => majInstaller()); } else $('installe').hidden = false; });
 clic('iNon', () => { profil.sansInstall = true; garder(); majInstaller(); }); clic('iFermer', () => { $('installe').hidden = true; });
 clic('bJouer', () => { if (time - accueilT > 0.3) defier('bouton jouer'); }); clic('duel', () => fermerVs());
-clic('bSuivant', () => { if (pret()) defier('bouton duel suivant'); }); clic('bRevanche', () => { if (pret()) lancer(true, 'bouton rejouer'); }); clic('bAccueil', () => { if (pret()) accueil(); });
+clic('bSuivant', () => { if (pret()) { if (net) revanche(); else defier('bouton duel suivant'); } }); clic('bRevanche', () => { if (pret() && !net) lancer(true, 'bouton rejouer'); }); clic('bAccueil', () => { if (pret()) { quitterDirect(); accueil(); } });
+clic('bDirect', () => { if (time - accueilT > 0.3) ouvrirDirect(); }); clic('xFermer', () => { quitterDirect(); fermerDirect(); });
+clic('xCreer', () => { if (!net) brancher(nouveauCode(), true); });
+clic('xRejoindre', () => { if (net) return; const c = nettoyerCode($('xCode').value); $('xCode').value = c; if (c.length === 4) brancher(c, false); else { $('xCode').focus(); } });
+clic('xPartager', () => { if (net && navigator.share) navigator.share({ title: 'LIANE', text: 'Rejoins mon duel LIANE avec le code ' + net.code, url: location.origin + location.pathname + '?duel=' + net.code }).catch(() => {}); });
+$('xCode').addEventListener('input', () => { $('xCode').value = nettoyerCode($('xCode').value); });
 clic('mPrec', () => changerMonde(-1)); clic('mSuiv', () => changerMonde(1));
 clic('bSinge', () => onglet('singes')); clic('bProfil', () => onglet('rangs', 'route')); clic('bPlace', () => onglet('rangs', 'monde'));
 clic('onglets', (e) => { const b = e.target.closest('[data-onglet]'); if (b) onglet(b.dataset.onglet); });
@@ -416,6 +438,157 @@ const peauDe = (e, t) => (peaux[t.fichier] = peaux[t.fichier] || chargerPeau(t.f
 function choisirSinge(id) { esp = espece(id); peau = sansPeau ? null : peauDe(esp, tenueDe(esp)); }
 choisirSinge(params.get('singe') && !sansPeau ? params.get('singe') : profil.singe);
 
+// ---------- Le duel en direct : deux téléphones, un code de partie, la même forêt, un départ ensemble ----------
+// Il n'y a pas encore de serveur : les deux téléphones se parlent par des relais publics (reseau.js). Chacun joue sa partie et dit où il est dix fois par seconde.
+// La règle : le premier qui tombe, ou que la nuit rattrape, a perdu, et la partie s'arrête pour les deux. Tombés au même instant, le plus loin gagne.
+// L'Elo se calcule sur chaque téléphone : sans serveur, rien ne l'empêche d'être truqué. C'est un prototype.
+const PROTO = 1, SILENCE = 8;                            // version des messages ; secondes sans nouvelles avant de considérer l'adversaire parti
+const propre = (v) => String(v || '').replace(/[<>&"'`\\]/g, '').trim().slice(0, 12);
+const maFiche = () => ({ nom: propre(profil.pseudo), elo: profil.elo, singe: esp.id, tenue: tenueDe(esp).id, skin: profil.skin });
+// Ce que l'autre téléphone dit de son joueur n'est jamais cru sur parole : tout est remis dans les bornes du jeu.
+function lireFiche(p) {
+  p = p && typeof p === 'object' ? p : {};
+  const e = ESPECES.find((x) => x.id === p.singe) || ESPECES[0], x = e.tenues.find((y) => y.id === p.tenue) || e.tenues[0];
+  return { nom: propre(p.nom) || 'Ton rival', elo: clamp(Math.round(+p.elo) || 800, 100, 4000), e, x, skin: skinById(p.skin).id };
+}
+function adopter(p) { const L = net.lui = lireFiche(p); net.peauLui = sansPeau ? null : peauDe(L.e, L.x); rival = { id: -1, nom: L.nom, elo: L.elo, skin: L.skin }; }
+// Une petite toile à part : le singe adverse y est dessiné entier, puis posé à demi transparent sur la forêt.
+function calque() { const n = Math.round(S * 9); if (!calqueLui) calqueLui = document.createElement('canvas'); if (calqueLui.width !== n) calqueLui.width = calqueLui.height = n; return calqueLui; }
+function majDirect() {
+  const a = !!net; $('xChoix').hidden = a; $('xAttente').hidden = !a; $('xTitre').textContent = !a ? 'Duel en direct' : net.hote ? 'Ta partie est ouverte' : 'Tu rejoins la partie';
+  if (!a) return;
+  $('xLegende').textContent = net.hote ? 'Donne ce code à ton adversaire' : 'Le code de sa partie'; $('xCodeVu').textContent = net.code; $('xPartager').hidden = !net.hote || !navigator.share;
+  const long = performance.now() / 1000 - net.depuis > 9;
+  $('xEtat').textContent = !net.lien.ouverts ? (long ? 'pas de liaison : vérifie ta connexion' : 'connexion au relais…') : net.lui ? net.lui.nom + ' arrive…' : net.hote ? 'en attente de ton adversaire…' : long ? 'aucune partie ouverte avec ce code pour l\'instant' : 'recherche de la partie…';
+}
+function ouvrirDirect(code) { if (phase !== 'accueil' || lancement || net) return; $('xPseudo').value = profil.pseudo || ''; $('xCode').value = code || ''; $('direct').hidden = false; majDirect(); }
+function fermerDirect() { $('direct').hidden = true; $('xPseudo').blur(); $('xCode').blur(); }
+function brancher(code, hote) {
+  profil.pseudo = propre($('xPseudo').value); garder(); pleinEcran(); $('xPseudo').blur(); $('xCode').blur();
+  net = { code, hote, etape: 'attente', lui: null, peauLui: null, luiDe: null, manche: 0, vu: performance.now() / 1000, tic: performance.now() / 1000, depuis: performance.now() / 1000, tampon: [], mortLui: null, mortDite: false, issue: null, finT: 0, go: false, compte: 0, seul: false, encoreMoi: false, encoreLui: false, envoiT: 0, distVue: -1, invitation: null, mondeAvant: monde, lien: null };
+  net.lien = liaison(code, hote, recuDirect, () => { if (net && net.etape === 'attente') majDirect(); });
+  clearInterval(veilleur); veilleur = setInterval(veille, 700); eveil(true); journal('duel en direct : partie ' + (hote ? 'créée' : 'rejointe')); majDirect();
+}
+// Toutes les 0,7 s : l'invité frappe à la porte, l'hôte redit son invitation tant qu'elle n'a pas de réponse, et chacun donne signe de vie.
+function veille() {
+  if (!net) { clearInterval(veilleur); return; }
+  const now = performance.now() / 1000; if (now - net.tic > 3) net.vu = now; net.tic = now;      // la page dormait (téléphone verrouillé) : on ne conclut rien tout de suite
+  if (net.etape === 'attente') { if (!net.hote) net.lien.envoyer({ k: 'salut', v: PROTO, p: maFiche() }); majDirect(); }
+  else if (net.etape === 'invite') net.lien.envoyer(net.invitation);
+  else if (!net.go || phase !== 'course') net.lien.envoyer({ k: 'ping' });
+  if (net.luiDe && !net.seul && now - net.vu > SILENCE) { journal('duel en direct : plus de nouvelles de l\'adversaire'); luiParti(); }
+}
+// L'hôte tire la forêt et invite. L'invité répond « prêt » : les deux annonces partent alors à un souffle d'écart.
+function manche() {
+  net.manche++; net.encoreMoi = net.encoreLui = false; net.etape = 'invite'; parcours = hasard() || 1;
+  net.invitation = { k: 'bienvenue', v: PROTO, pour: net.luiDe, m: net.manche, graine: parcours, monde: MONDES.indexOf(monde), p: maFiche() }; net.lien.envoyer(net.invitation);
+  if (phase === 'fin') majRevanche(); else majDirect();
+}
+function recuDirect(m) {
+  if (!net) return; const now = performance.now() / 1000;
+  if (!net.luiDe) {                                      // personne en face pour l'instant
+    if (net.hote) { if (m.k !== 'salut' || net.etape !== 'attente') return; if (m.v !== PROTO) { net.lien.envoyer({ k: 'refus', pour: m.de }); return; } net.luiDe = m.de; net.vu = now; adopter(m.p); manche(); return; }
+    if (m.pour !== net.lien.de) return;
+    if (m.k === 'refus') { $('xEtat').textContent = 'vos deux jeux n\'ont pas la même version : rechargez la page'; return; }
+    if (m.k !== 'bienvenue' || m.v !== PROTO) return; net.luiDe = m.de;
+  }
+  if (m.de !== net.luiDe) return;                        // un troisième téléphone sur le même code : ignoré
+  net.vu = now; if (net.seul && m.k !== 'quitte') { net.seul = false; if (net.etape === 'fin') majRevanche(); }
+  if (m.k === 'e') {
+    if (net.etape === 'fin' && now - (net.finiDit || 0) > 1) { net.finiDit = now; net.lien.envoyer({ k: 'fini', gagne: net.issue === 'gagne', x: Math.round(Math.max(0, M.x)) }); }      // il joue encore : sa page dormait quand le duel s'est fini
+    const d = m.d; if (net.etape !== 'course' || !Array.isArray(d) || d.length !== 9 || !d.every(Number.isFinite) || !Number.isFinite(m.t)) return;
+    net.tampon.push({ r: now, t: m.t, d }); if (net.tampon.length > 24) net.tampon.shift(); if (!net.mortLui) G.dist = Math.max(0, d[0]);
+  } else if (m.k === 'salut') { if (net.hote && net.etape === 'invite') net.lien.envoyer(net.invitation); }
+  else if (m.k === 'bienvenue') {
+    if (net.hote || m.pour !== net.lien.de || m.v !== PROTO) return;
+    if (m.m === net.manche) { net.lien.envoyer({ k: 'pret', m: m.m }); return; }        // déjà reçue : on redit qu'on est prêt
+    if (net.etape !== 'attente' && net.etape !== 'fin') return;
+    net.manche = m.m; adopter(m.p); parcours = (m.graine | 0) || 1;
+    const i = clamp(m.monde | 0, 0, MONDES.length - 1); if (MONDES[i] !== monde) { monde = MONDES[i]; setPalette(monde.id); resize(); }      // on joue dans le niveau de l'hôte
+    net.lien.envoyer({ k: 'pret', m: m.m }); annoncer();
+  } else if (m.k === 'pret') { if (net.hote && net.etape === 'invite' && m.m === net.manche) annoncer(); }
+  else if (m.k === 'mort') {
+    if (net.etape !== 'course' || net.mortLui) return;
+    net.mortLui = { x: Math.max(0, +m.x || 0), cause: m.cause === 'nuit' ? 'nuit' : 'chute' }; G.dist = net.mortLui.x; if (!M.mort) gagner();
+  } else if (m.k === 'fin') { if (Number.isFinite(m.x) && (net.etape === 'course' || net.etape === 'fin')) { G.dist = Math.max(0, m.x); if (phase === 'fin') { $('fLui').textContent = Math.round(G.dist) + ' m'; const d = Math.round(Math.max(0, M.x)), mx = Math.max(d, G.dist, 1); $('fbMoi').style.width = d / mx * 100 + '%'; $('fbLui').style.width = G.dist / mx * 100 + '%'; } } }
+  else if (m.k === 'fini') {                             // le duel s'est fini sans nous (page endormie, message perdu) : on s'aligne sur ce que dit l'autre
+    if (net.etape !== 'course' || !net.go || net.issue) return;
+    if (m.gagne) { net.issue = 'perdu'; net.absent = !M.mort; if (Number.isFinite(m.x)) G.dist = Math.max(0, m.x); if (!M.mort) finir(); }
+    else if (!net.mortLui) { net.mortLui = { x: Math.max(0, Number.isFinite(m.x) ? m.x : G.dist), cause: 'chute' }; G.dist = net.mortLui.x; if (!M.mort) gagner(); }
+  }
+  else if (m.k === 'encore') { net.encoreLui = true; if (net.etape === 'fin') { majRevanche(); if (net.hote && net.encoreMoi) manche(); } }
+  else if (m.k === 'quitte') luiParti();
+}
+// L'annonce du duel en direct : les deux joueurs, la mise, puis la forêt s'ouvre et le décompte commence.
+function annoncer() {
+  fermerDirect(); fermerFiche(); lancement = true; vsPret = false;
+  Object.assign(net, { etape: 'annonce', go: false, mortLui: null, mortDite: false, issue: null, absent: false, finiDit: 0, finT: 0, seul: false, encoreMoi: false, encoreLui: false, distVue: -1 }); net.tampon.length = 0; clearTimeout(net.compte);
+  const cl = !monde.essai, rm = rang(profil.elo), rl = rang(rival.elo), L = net.lui, av = $('vLuiAv'), im = new Image();
+  $('vTitre').textContent = 'duel en direct · ' + (monde.essai ? 'tremplins' : monde.nom);
+  $('vMoiImg').src = visage(esp); $('vMoiEmb').innerHTML = embleme(rm.i, 22); $('vMoiElo').textContent = profil.elo; $('vMoiRang').textContent = rm.nom;
+  av.textContent = ''; im.alt = ''; im.src = visage(L.e); av.appendChild(im); av.style.setProperty('--c', 'transparent');
+  $('vLuiNom').textContent = L.nom; $('vLuiEmb').innerHTML = embleme(rl.i, 22); $('vLuiElo').textContent = rival.elo; $('vLuiRang').textContent = rl.nom;
+  $('vMise').innerHTML = cl ? `<span class="plus">Victoire +${gain(profil, rival.elo, true)}</span><span class="moins">Défaite −${Math.abs(gain(profil, rival.elo, false))}</span>` : '<span>Hors classement : ton Elo ne bouge pas</span>';
+  $('vRegle').textContent = 'même forêt, départ ensemble · le premier qui tombe a perdu';
+  $('duel').classList.add('on'); $('onglets').classList.add('cache'); $('accueil').classList.remove('on'); $('fin').classList.remove('on', 'pret'); taire();
+  setTimeout(() => { if (!net || net.etape !== 'annonce') return; lancer(false, 'en direct', true); vsPret = true; vsFin = setTimeout(() => fermerVs(true), 2300); }, 90);
+}
+// Trois, deux, un : au « Partez », les deux singes se laissent partir ensemble, que le doigt soit posé ou non.
+function decompter(n) {
+  if (!net || net.etape !== 'course' || net.go || phase !== 'course') return;
+  const el = $('decompte'); el.textContent = n > 0 ? n : 'Partez'; el.classList.toggle('mot', n <= 0); el.classList.remove('bat'); void el.offsetWidth; el.classList.add('bat'); vibre(n > 0 ? 8 : 30);
+  if (n > 0) { net.compte = setTimeout(() => decompter(n - 1), 750); return; }
+  net.go = true; jeu.setHold(true); if (aide < 9) dire('lâche dans l\'arc doré');
+}
+// Pendant la course : dire où l'on est, dix fois par seconde, et dire tout de suite qu'on est tombé.
+function directCourse() {
+  if (!net.go) return;
+  if (M.mort) { if (!net.mortDite && net.issue !== 'gagne') { net.mortDite = true; net.lien.envoyer({ k: 'mort', x: Math.round(Math.max(0, M.x) * 10) / 10, cause: M.mort }); } return; }
+  if (net.issue || time - net.envoiT < 0.095) return; net.envoiT = time;
+  const sw = M.mode === 'swing' && M.li;
+  net.lien.envoyer({ k: 'e', t: Math.round(t * 1000) / 1000, d: [M.x, M.y, M.th, M.om, sw ? 1 : 0, sw ? M.li.x : 0, sw ? M.li.y : 0, M.vx, M.vy].map((v) => Math.round(v * 100) / 100) });
+}
+// Il est tombé, ou parti, et l'on tient encore : c'est gagné. La partie s'arrête un instant plus tard.
+function gagner() {
+  const c = net.mortLui.cause; net.issue = 'gagne'; net.finT = time + 0.7; jeu.nuit.on = false; $('nuit').classList.remove('on'); nuitVue = '';
+  dire(rival.nom + (c === 'nuit' ? ' rattrapé par la nuit' : c === 'parti' ? ' a quitté le duel' : ' est tombé')); vibre([14, 70, 14]);
+}
+function luiParti() {
+  if (!net) return; const e = net.etape;
+  if (e === 'attente') return;
+  if (e === 'fin') { net.seul = true; majRevanche(); return; }
+  if (e === 'course' && net.go) { net.seul = true; if (!net.issue && !M.mort && !net.mortLui) { net.mortLui = { x: G.dist, cause: 'parti' }; gagner(); } return; }
+  abandonnerDirect(rival.nom + ' a quitté la partie');   // pendant l'invitation, l'annonce ou le décompte : personne ne perd rien
+}
+function majRevanche() {
+  const b = $('bSuivant'); b.firstElementChild.textContent = 'Revanche';
+  b.lastElementChild.textContent = net.seul ? rival.nom + ' est parti' : net.encoreMoi ? 'en attente de ' + rival.nom + '…' : net.encoreLui ? rival.nom + ' veut sa revanche' : 'en direct · ' + rival.nom;
+  b.disabled = !!(net.seul || net.encoreMoi);
+}
+function revanche() { if (!net || net.etape !== 'fin' || net.seul || net.encoreMoi) return; net.encoreMoi = true; net.lien.envoyer({ k: 'encore' }); majRevanche(); if (net.hote && net.encoreLui) manche(); }
+// Quitter le duel en direct : on prévient l'autre, on coupe la liaison, on retrouve son niveau.
+function quitterDirect() {
+  if (!net) return; clearInterval(veilleur); clearTimeout(net.compte); if (net.luiDe) net.lien.envoyer({ k: 'quitte' });
+  const l = net.lien, m0 = net.mondeAvant; net = null; setTimeout(() => l.fermer(), 400); eveil(false); journal('duel en direct : quitté');
+  $('decompte').classList.remove('bat'); $('fin').classList.remove('direct'); $('bSuivant').disabled = false; $('bAccueil').textContent = 'Accueil'; majDirect();
+  if (m0 !== monde) { monde = m0; setPalette(monde.id); resize(); }
+}
+function abandonnerDirect(msg) {
+  clearTimeout(vsFin); vsPret = false; lancement = false; quitterDirect(); fermerDirect(); accueil();
+  if (msg) { dire(msg, true); setTimeout(() => { if (phase === 'accueil') taire(); }, 4500); }
+}
+// Où dessiner l'adversaire : on rejoue ce qu'il a envoyé avec un léger retard (0,16 s), pour que son geste reste lisse même si un message tarde.
+function etatDirect(out) {
+  const T = net && net.etape === 'course' && !net.mortLui ? net.tampon : null;
+  if (!T || !T.length) { out.fini = true; return out; }
+  let dec = Infinity; for (const s of T) dec = Math.min(dec, s.r - s.t);
+  const tt = performance.now() / 1000 - dec - 0.16; let i = T.length - 1; while (i > 0 && T[i].t > tt) i--;
+  const a = T[i].d, b = T[Math.min(i + 1, T.length - 1)].d, ta = T[i].t, tb = T[Math.min(i + 1, T.length - 1)].t, k = tb > ta ? clamp((tt - ta) / (tb - ta), 0, 1) : 0, L = (j) => a[j] + (b[j] - a[j]) * k, meme = a[4] === b[4];
+  out.x = L(0); out.y = L(1); out.th = meme ? L(2) : a[2]; out.om = meme ? L(3) : a[3]; out.mode = a[4] > 0.5 ? 'swing' : 'fly'; out.ax = a[5]; out.ay = a[6]; out.vx = L(7); out.vy = L(8); out.fini = false;
+  return out;
+}
+addEventListener('pagehide', () => { if (net && net.luiDe) net.lien.envoyer({ k: 'quitte' }); });
+
 // La branche du départ : le singe y attend, la liane en main, avant de se laisser partir.
 function drawPerche() {
   const x1 = X(perche.x + 0.85); if (x1 < -S) return;
@@ -544,7 +717,9 @@ function frame() {
   jeu.events.length = 0;
   const dt = paused ? 0 : real, skin = skinById(profil.skin);
   if (M.mort && !mortT) mortT = time;
-  if (mortT && phase === 'course' && time - mortT > 0.7) finir();
+  if (net && phase === 'course') directCourse();
+  if (mortT && phase === 'course' && time - mortT > (net ? 1.1 : 0.7)) finir();           // en direct, on laisse à sa chute le temps d'arriver, s'il est tombé au même instant
+  else if (net && net.finT && phase === 'course' && time > net.finT) finir();
   if (mortT && phase === 'accueil' && time - mortT > 1.2) scene(hasard(), false);
   if (phase === 'course') {
     // Le premier geste engage le duel : la mise est notée tout de suite. Quitter ou recharger la page en cours de duel compte comme une défaite.
@@ -554,6 +729,7 @@ function frame() {
     // Aucun lâcher ne passe à ce balancement : le jeu le dit, tant que c'est vrai.
     const attends = M.mode === 'swing' && !M.idle && !M.depart && M.om > 0.2 && M.th > -0.2 && !M.arc && !M.zone && !jeu.aZone;
     if (attends !== attendVu) { attendVu = attends; if (attends) dire('reste accroché : il reprend de l\'élan'); else if (aide >= 9 && !pouvoirT) taire(); }
+    if (G.direct && net) { const dl = Math.round(G.dist); if (dl !== net.distVue && parti) { net.distVue = dl; $('hLui').textContent = rival.nom + ' · ' + dl + ' m'; } }
     if (!depasse && Math.round(M.x) > Math.round(G.dist)) { depasse = true; $('ecart').textContent = rival.nom + ' dépassé'; $('ecart').className = 'bulle on avance'; ecartT = time; }
     if (ecartT > 0 && time - ecartT > 2.4) { $('ecart').className = 'bulle'; ecartT = -9; }
     const dn = M.x - jeu.nuit.x, txt = !M.idle && dn < 22 ? 'la nuit · ' + Math.max(0, Math.round(dn)) + ' m' : '';
@@ -595,7 +771,7 @@ function frame() {
   }
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
   // Le repère du rival : un faisceau à l'endroit où il s'est arrêté. Le dépasser, c'est gagner.
-  if (phase !== 'accueil' && G && (parti || phase === 'fin') && faisceau(G.dist, 0.34, 1.1)) {
+  if (phase !== 'accueil' && G && (parti || phase === 'fin') && (!G.direct || (net && net.mortLui && net.mortLui.cause !== 'parti')) && faisceau(G.dist, 0.34, 1.1)) {
     ctx.globalAlpha = 0.85; ctx.fillStyle = '#fff6dc'; ctx.font = `300 ${Math.round(11 * dpr)}px Jost, sans-serif`; ctx.textAlign = 'center';
     ctx.fillText(rival.nom.toUpperCase() + '  ·  ' + Math.round(G.dist) + ' M', X(G.dist), Y(9.8)); ctx.globalAlpha = 1;
   }
@@ -608,7 +784,23 @@ function frame() {
   const pose = poseSinge(M, B, dt, autour(M, M.mode === 'swing' ? M.li : null));
   if (phase !== 'accueil') drawPerche();
   drawLianas(pose);
-  if (phase !== 'accueil' && G) {                        // le fantôme : il porte le skin de son joueur
+  if (phase !== 'accueil' && G && G.direct) {            // l'adversaire en direct : son vrai singe, dans sa tenue, un peu transparent pour ne pas le confondre avec le sien
+    etatDirect(Mg);
+    if (!Mg.fini) {
+      const gp = poseSinge(Mg, Bg, dt, autour(Mg, null)), pl = net.peauLui, c = calque(), o = c.width / 2, Xc = (x) => (x - Mg.x) * S + o, Yc = (y) => (Mg.y - y) * S + o, g = c.getContext('2d');
+      g.clearRect(0, 0, c.width, c.height);
+      if (pl && pl.pret) dessinerPeau(g, gp, pl, Xc, Yc, S); else dessinerSinge(g, gp, skinById(rival.skin).ink, Xc, Yc, S);
+      ctx.globalAlpha = 0.5;
+      if (Mg.mode === 'swing') { ctx.strokeStyle = PAL.ink; ctx.lineWidth = S * 0.06; ctx.beginPath(); ctx.moveTo(X(Mg.ax), Y(Mg.ay)); ctx.lineTo(X(Mg.x), Y(Mg.y)); ctx.stroke(); }
+      ctx.globalAlpha = 0.74; ctx.drawImage(c, Math.round(X(Mg.x) - o), Math.round(Y(Mg.y) - o));
+      if (Math.abs(Mg.x - M.x) > 1.6 || Math.abs(Mg.y - M.y) > 1.6) {            // son nom, sur une pastille sombre : lisible aussi sur le ciel clair
+        const px = Math.round(11 * dpr), tx = clamp(X(Mg.x), px * 4, W - px * 4), ty = Y(Mg.y) - S * 0.95; ctx.font = `500 ${px}px Jost, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const lw = ctx.measureText(rival.nom).width + px * 1.5, lh = px * 1.9; ctx.globalAlpha = 0.62; ctx.fillStyle = 'rgb(3,22,26)'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(tx - lw / 2, ty - lh / 2, lw, lh, lh / 2); else ctx.rect(tx - lw / 2, ty - lh / 2, lw, lh); ctx.fill();
+        ctx.globalAlpha = 1; ctx.fillStyle = '#fff6dc'; ctx.fillText(rival.nom, tx, ty + px * 0.06); ctx.textBaseline = 'alphabetic';
+      }
+      ctx.globalAlpha = 1;
+    }
+  } else if (phase !== 'accueil' && G) {                 // le fantôme : il porte le skin de son joueur
     etat(G, t, Mg);
     if (!Mg.fini) {
       const gs = skinById(rival.skin), gp = poseSinge(Mg, Bg, dt, autour(Mg, null));
@@ -701,19 +893,22 @@ function frame() {
 
   // En course : la ligne du haut, de ton départ jusqu'au repère du rival. Les deux points avancent dessus.
   if (phase === 'course') {
-    const fin = Math.max(60, G.dist), pm = Math.round(clamp(M.x / fin, 0, 1) * 400) / 4, pl = Mg.fini ? 100 : Math.round(clamp((Mg.x || 0) / fin, 0, 1) * 400) / 4;
+    // En direct, il n'y a pas de repère à atteindre : la ligne s'allonge avec celui qui mène.
+    const fin = G.direct ? Math.max(60, M.x, G.dist) * 1.12 : Math.max(60, G.dist), pm = Math.round(clamp(M.x / fin, 0, 1) * 400) / 4, pl = G.direct ? Math.round(clamp(G.dist / fin, 0, 1) * 400) / 4 : Mg.fini ? 100 : Math.round(clamp((Mg.x || 0) / fin, 0, 1) * 400) / 4;
     if (pm !== pisteMoi) { pisteMoi = pm; $('hpMoi').style.left = pm + '%'; }
     if (pl !== pisteLui) { pisteLui = pl; $('hpLui').style.left = pl + '%'; }
   }
 }
 
-addEventListener('resize', resize); resize();
+// Pendant qu'on écrit (pseudo, code de partie), le clavier du téléphone peut changer la taille de la page : on ne reconstruit la forêt qu'une fois le clavier refermé.
+const ajuster = () => { if (document.activeElement && document.activeElement.tagName === 'INPUT') return; if (Math.round(innerWidth * dpr) !== W || Math.round(innerHeight * dpr) !== H) resize(); };
+addEventListener('resize', ajuster); addEventListener('focusout', () => setTimeout(ajuster, 350)); resize();
 $('version').textContent = VERSION;
 // Les dessins de l'interface : dégradés des emblèmes, icônes des onglets et des boutons.
 document.body.insertAdjacentHTML('afterbegin', DEFS);
 { const noms = { jouer: 'Jouer', singes: 'Singes', boutique: 'Boutique', rangs: 'Classement' }; for (const b of $('onglets').children) b.innerHTML = ICONE[b.dataset.onglet] + '<span>' + noms[b.dataset.onglet] + '</span>'; }
 $('iNon').innerHTML = ICONE.croix; $('mPrec').innerHTML = ICONE.retour; $('mSuiv').innerHTML = ICONE.fleche; $('dFermer').innerHTML = ICONE.croix; $('pouvoir').firstElementChild.innerHTML = ICONE.eclair;
-window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get image() { return { dpr, qualite, fluide }; }, get cadre() { return { x: X(M.x) / W, y: Y(M.y) / H, large: W / S, portrait }; }, profil, CFG, lancer, defier, onglet, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
+window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get net() { return net; }, get image() { return { dpr, qualite, fluide }; }, get cadre() { return { x: X(M.x) / W, y: Y(M.y) / H, large: W / S, portrait }; }, profil, CFG, lancer, defier, onglet, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
 journal('page ouverte');
 // Un duel classé était engagé quand la page a été quittée ou rechargée : il compte comme une défaite.
 let abandon = 0;
@@ -723,6 +918,7 @@ if (params.get('journal')) { let j = []; try { j = JSON.parse(localStorage.getIt
   const pre = document.createElement('pre'); pre.setAttribute('data-ui', ''); pre.style.cssText = 'position:fixed;inset:0;margin:0;padding:12px;overflow:auto;background:rgba(2,12,16,.94);color:#fff6dc;font:12px/1.5 monospace;z-index:9;touch-action:pan-y;-webkit-user-select:text;user-select:text';
   pre.textContent = 'Journal de LIANE ' + VERSION + ' (les plus récents en bas)\n\n' + j.map(([t, q]) => new Date(t).toLocaleTimeString('fr-FR') + '  ' + q).join('\n'); document.body.appendChild(pre); }
 accueil();
+{ const c = nettoyerCode(params.get('duel')); if (c.length === 4) ouvrirDirect(c); }
 if (abandon) { dire('duel quitté en cours : −' + Math.abs(abandon) + ' au classement', true); setTimeout(() => { if (phase === 'accueil') taire(); }, 5000); }
 $('chargement').classList.add('vu');
 frame();

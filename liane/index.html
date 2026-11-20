@@ -73,6 +73,29 @@
   #bInstaller { grid-column:1 / -1; display:flex; align-items:center; height:44px; border-radius:14px; } #bInstaller[hidden] { display:none; }
   #iOui { flex:1; height:100%; padding:0 14px; text-align:left; font-size:12.5px; color:var(--doux); } #iOui b { color:var(--or); font-weight:500; }
   #iNon { width:44px; height:100%; display:grid; place-items:center; color:var(--pale); } #iNon svg { width:16px; height:16px; }
+  /* Le duel en direct : le bouton de l'accueil, la feuille (créer ou rejoindre une partie), le décompte du départ */
+  #bDirect { grid-column:1 / -1; height:48px; display:flex; align-items:center; justify-content:center; gap:9px; border-radius:16px; font-size:12.5px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; transition:transform .12s; }
+  #bDirect:active { transform:scale(.97); } #bDirect small { font-size:12px; font-weight:400; letter-spacing:.04em; text-transform:none; color:var(--doux); }
+  #bDirect i { width:8px; height:8px; border-radius:50%; background:var(--vert); animation:pouls 1.8s infinite; }
+  @keyframes pouls { 0% { box-shadow:0 0 0 0 rgba(168,236,176,.6); } 70%, 100% { box-shadow:0 0 0 7px rgba(168,236,176,0); } }
+  #direct { align-items:flex-start; }
+  #direct .feuille { margin-top:calc(var(--st) + 5vh); max-height:calc(100% - var(--st) - 5vh - 10px); overflow-y:auto; touch-action:pan-y; border-radius:26px; border-bottom:1px solid var(--trait); padding:20px 20px 12px; gap:10px; }
+  #direct .feuille > b { font-size:18px; font-weight:600; }
+  #direct input { font:inherit; font-size:17px; color:var(--creme); background:rgba(255,246,220,.07); border:1px solid var(--trait); border-radius:14px; height:50px; padding:0 14px; box-sizing:border-box; min-width:0; outline:none; -webkit-user-select:text; user-select:text; touch-action:manipulation; }
+  #direct input:focus { border-color:var(--or); } #direct input::placeholder { color:var(--pale); }
+  #xChoix, #xAttente { align-self:stretch; display:flex; flex-direction:column; gap:10px; align-items:stretch; } #xChoix[hidden], #xAttente[hidden], #xPartager[hidden] { display:none; }
+  .champ { display:flex; align-items:center; gap:12px; } .champ span { font-size:12.5px; color:var(--doux); white-space:nowrap; } .champ input { flex:1; }
+  #direct .cta { margin-top:0; } .ou { font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--pale); margin-top:2px; }
+  .rejoindre { display:flex; gap:10px; } .rejoindre .btn { height:50px; flex:none; }
+  #xCode { flex:1; text-align:center; letter-spacing:.4em; text-indent:.4em; font-weight:600; font-size:22px; text-transform:uppercase; } #xCode::placeholder { font-weight:400; font-size:15px; letter-spacing:.2em; }
+  #xLegende { font-size:12.5px; color:var(--doux); } #xCodeVu { font-size:56px; font-weight:600; letter-spacing:.22em; text-indent:.22em; color:var(--or); line-height:1.15; -webkit-user-select:text; user-select:text; }
+  #xEtat { min-height:19px; } #xFermer { height:40px; font-size:12.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--doux); }
+  #decompte { position:fixed; z-index:6; left:0; right:0; top:calc(var(--st) + 23vh); text-align:center; font-size:min(120px, 30vw); font-weight:200; line-height:1; pointer-events:none; opacity:0; text-shadow:0 4px 30px rgba(2,14,18,.6); }
+  #decompte.mot { font-size:min(64px, 16vw); letter-spacing:.2em; text-indent:.2em; text-transform:uppercase; font-weight:300; padding-top:22px; }
+  #decompte.bat { animation:bat .72s var(--doux-mvt); }
+  @keyframes bat { 0% { opacity:0; transform:scale(1.5); } 18% { opacity:1; transform:none; } 72% { opacity:1; } 100% { opacity:0; transform:scale(.92); } }
+  #fin.direct #bRevanche { display:none; } #fin.direct #bAccueil { grid-column:1 / -1; }
+  .avatar img { width:100%; height:100%; border-radius:inherit; object-fit:contain; background:radial-gradient(120% 90% at 50% 25%, #f6e9b8 0%, #bfe0cf 45%, #4f9c95 100%); }
   #installe ol { margin:0; padding:0 0 0 20px; text-align:left; font-size:14px; line-height:1.6; color:var(--creme); align-self:stretch; } #installe b { font-size:18px; font-weight:600; }
 
   /* ---------- Les onglets ---------- */
@@ -264,6 +287,7 @@
   @media (orientation:landscape) and (max-height:520px) {
     #chrono { font-size:34px; } #crans { top:calc(var(--st) + 54px); }
     .fCarte { width:min(100%, 760px); flex-direction:row; align-items:center; gap:28px; } .fG, .fD { flex:1; } .fG { gap:9px; } #fTemps { font-size:min(88px, 26vh); }
+    #xChoix > p { display:none; } #direct .feuille { margin-top:calc(var(--st) + 8px); max-height:calc(100% - var(--st) - 16px); gap:7px; padding-top:14px; } #direct .essai { font-size:11px; padding:7px 10px; } #xCodeVu { font-size:44px; }
     #duel { gap:10px; } .vsCote { padding:10px 8px; } .vsCote img, .avatar { width:62px; height:62px; border-radius:20px; } .avatar { font-size:27px; }
     .singe { flex-basis:min(74vw, 560px); display:grid; grid-template-columns:1fr 1fr; column-gap:16px; align-items:start; } .singe .sHaut, .singe .sTenues, .singe .btn { grid-column:1 / -1; } .sHaut img { width:68px; height:68px; }
     .fInfo h3 { font-size:22px; } .une { min-height:150px; }
@@ -289,6 +313,7 @@
     <button class="monSinge carte" id="bSinge" data-ui><img id="aSingeImg" alt=""><span class="duo"><small id="aSingeTenue"></small><b id="aSingeNom"></b></span></button>
     <div class="mondes carte" data-ui><button id="mPrec" aria-label="niveau précédent"></button><span class="duo"><small id="mInfo"></small><b id="mNom"></b><span id="mPoints"></span></span><button id="mSuiv" aria-label="niveau suivant"></button></div>
     <button class="cta" id="bJouer" data-ui><b>Jouer</b><small id="aMise"></small></button>
+    <button class="carte" id="bDirect" data-ui><i></i>Duel en direct<small>contre un ami</small></button>
   </div>
 </div>
 
@@ -309,7 +334,7 @@
     <div class="vsCote lui carte"><div class="avatar" id="vLuiAv"></div><b id="vLuiNom"></b><span class="vsElo"><span class="emb" id="vLuiEmb"></span><span id="vLuiElo"></span></span><small id="vLuiRang"></small></div>
   </div>
   <div class="vsMise" id="vMise"></div>
-  <small>même forêt pour vous deux · le plus loin gagne</small>
+  <small id="vRegle">même forêt pour vous deux · le plus loin gagne</small>
 </div>
 
 <div id="fin" class="ecran" data-ui>
@@ -386,13 +411,35 @@
   </div>
 </div>
 
+<div id="direct" class="voile" data-ui hidden>
+  <div class="feuille">
+    <b id="xTitre">Duel en direct</b>
+    <div id="xChoix">
+      <p>Même forêt, départ ensemble. Le premier qui tombe a perdu.</p>
+      <label class="champ"><span>Ton pseudo</span><input id="xPseudo" maxlength="12" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="facultatif"></label>
+      <button class="cta" id="xCreer"><b>Créer une partie</b></button>
+      <span class="ou">ou rejoins la sienne</span>
+      <div class="rejoindre"><input id="xCode" maxlength="4" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="son code"><button class="btn plein" id="xRejoindre">Rejoindre</button></div>
+    </div>
+    <div id="xAttente" hidden>
+      <span id="xLegende"></span>
+      <div id="xCodeVu"></div>
+      <p id="xEtat"></p>
+      <button class="btn creux" id="xPartager">Envoyer le code</button>
+    </div>
+    <p class="essai">Prototype sans serveur : la liaison passe par des relais publics gratuits. Ton pseudo et ta position y circulent en clair.</p>
+    <button id="xFermer">Annuler</button>
+  </div>
+</div>
+
 <nav id="onglets" data-ui>
   <button data-onglet="jouer" class="actif"></button><button data-onglet="singes"></button><button data-onglet="boutique"></button><button data-onglet="rangs"></button>
 </nav>
 
 <div id="note" class="ombre vu"></div>
+<div id="decompte" class="ombre"></div>
 <div id="version"></div>
 <div id="chargement">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=25"></script>
+<script type="module" src="main.js?v=26"></script>
 </body>
 </html>
