@@ -65,7 +65,10 @@ for (const e of ESPECES) e.regles = regles(e.points, e.pouvoir.id);
 // ou unique (un seul exemplaire au monde). theme : la saison, la fête ou l'événement auquel elle est liée.
 // Rien n'est encaissé pour l'instant : il n'y a ni serveur ni paiement. La boutique note l'intention d'achat et prête la tenue (voir main.js).
 export const RARETES = { commune: 'Commune', rare: 'Rare', saison: 'Saison', epique: 'Épique' };
-export const PACKS = [{ id: 'depart', nom: 'Pack dressing', prix: 9.99, tenues: ['araignee:ninja', 'tamarin:rockeur', 'colobe:pirate', 'gibbon:astronaute', 'colobe:noel'] }];
+// Un pack ne contient que des tenues payantes (décision de Romain du 20/11/2026) : jamais une tenue de classement, jamais un exemplaire unique.
+// taille : le nombre de tenues promis. Tant que le pack n'en a pas autant, il est annoncé mais pas vendu.
+export const PACKS = [{ id: 'depart', nom: 'Pack dressing', prix: 9.99, taille: 5, tenues: ['colobe:pirate', 'gibbon:astronaute', 'colobe:noel'] }];
+for (const p of PACKS) p.tenues = p.tenues.filter((cle) => { const [es, te] = cle.split(':'), t = ESPECES.find((e) => e.id === es)?.tenues.find((x) => x.id === te); return t && t.prix && !(t.edition && t.edition.type === 'unique'); });
 export const cleTenue = (e, t) => e.id + ':' + t.id;
 export const euros = (p) => p.toFixed(2).replace('.', ',') + ' €';
 export const espece = (id) => ESPECES.find((e) => e.id === id) || ESPECES[0];

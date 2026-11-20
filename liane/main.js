@@ -1,14 +1,14 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des skins.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=21';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=21';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=21';
-import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=21';
-import { chargerPeau, dessinerPeau } from './peau.js?v=21';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=21';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=22';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=22';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=22';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=22';
+import { chargerPeau, dessinerPeau } from './peau.js?v=22';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=22';
 
-const VERSION = 'v0.10';
+const VERSION = 'v0.10.1';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -158,13 +158,20 @@ function ouvrirClassement() {
 function ouvrirSinges() {
   $('gListe').innerHTML = ESPECES.map((e) => {
     const choisi = esp.id === e.id, pts = COMPETENCES.map(([k, nom]) => `<li><span>${nom}</span><em>${'<i class="p"></i>'.repeat(e.points[k])}${'<i></i>'.repeat(5 - e.points[k])}</em></li>`).join('');
-    return `<button class="singe ${choisi ? 'choisi' : ''}" data-singe="${e.id}"><img src="singes/${e.id}-portrait.png?v=21" alt=""><b>${e.nom}</b><small>${e.mot}</small><ul>${pts}</ul><p>${e.geste}</p><p class="pv"><em>${e.pouvoir.nom}</em> · ${e.pouvoir.texte}</p><span class="etat">${choisi ? 'choisi' : 'choisir'}</span></button>`;
+    return `<button class="singe ${choisi ? 'choisi' : ''}" data-singe="${e.id}"><img src="singes/${e.id}-portrait.png?v=22" alt=""><b>${e.nom}</b><small>${e.mot}</small><ul>${pts}</ul><p>${e.geste}</p><p class="pv"><em>${e.pouvoir.nom}</em> · ${e.pouvoir.texte}</p><span class="etat">${choisi ? 'choisi' : 'choisir'}</span></button>`;
   }).join('');
   $('singes').classList.add('on');
 }
 $('gListe').addEventListener('click', (e) => { const b = e.target.closest('[data-singe]'); if (!b) return; profil.singe = b.dataset.singe; garder(); choisirSinge(profil.singe); accueil(); });
 // Le dressing : le singe choisi, en grand, pendu à une liane ; ses tenues dessous. Les flèches changent de singe.
 const Mp = { mode: 'swing', idle: false, depart: false, hold: true, li: null };
+// Le premier pack d'essai (v0.10) prêtait aussi les deux tenues de classement. Un pack ne contient plus que des tenues payantes :
+// on reprend celles de classement à qui n'a pas encore le rang.
+if (profil.dressing.v < 2) {
+  const D = profil.dressing;
+  if (D.intentions.some((i) => i.quoi === 'pack:depart')) D.possede = D.possede.filter((cle) => { const [es, te] = cle.split(':'), t = espece(es).tenues.find((x) => x.id === te); return !(t && t.elo && profil.elo < t.elo); });
+  D.v = 2; garder();
+}
 // On essaie une tenue en la touchant (dVue : celle qu'on regarde) ; le bouton du bas la porte, ou dit comment l'obtenir.
 let dVue = null, peauVue = null, achat = null;
 const rangDe = (elo) => RANGS.find((r) => r[0] === elo)?.[1] || elo;
@@ -184,8 +191,9 @@ function majDressing(garde) {
   else if (a) b.textContent = 'porter';
   else if (dVue.elo) { b.textContent = `rang ${rangDe(dVue.elo)} : encore ${dVue.elo - profil.elo} points`; b.disabled = true; }
   else b.textContent = 'acheter · ' + euros(dVue.prix);
-  const pack = PACKS[0], reste = pack.tenues.filter((c) => !profil.dressing.possede.includes(c)).length;
-  $('dPack').hidden = reste === 0; $('dPack').innerHTML = `<b>${pack.nom}</b> ${pack.tenues.length} tenues · ${euros(pack.prix)}`;
+  const pack = PACKS[0], reste = pack.tenues.filter((c) => !profil.dressing.possede.includes(c)).length, complet = pack.tenues.length >= pack.taille;
+  $('dPack').hidden = complet && reste === 0; $('dPack').disabled = !complet;
+  $('dPack').innerHTML = `<b>${pack.nom}</b> ${pack.taille} tenues payantes · ${euros(pack.prix)}${complet ? '' : ` · bientôt (${pack.tenues.length} sur ${pack.taille} prêtes)`}`;
 }
 // La boutique est en essai : rien n'est encaissé. Confirmer note l'intention d'achat (sur l'appareil) et prête la tenue.
 function demander(a) { achat = a; $('aTitre').textContent = a.titre; $('aPrix').textContent = euros(a.prix); $('aDetail').textContent = a.detail || ''; $('dAchat').hidden = false; }
