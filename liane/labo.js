@@ -1,10 +1,10 @@
 // LIANE — l'atelier du singe : le même mouvement que dans le jeu, découpé image par image, pour juger chaque pose.
 // Paramètres d'adresse : s = chaine | attente | depart | rebond ; de = instant de départ (s) ; n = nombre d'images ; pas = pas de 1/120 s entre deux images ;
 // col = images par ligne ; px = pixels par mètre ; graine ; monde.
-import { Jeu, MONDES, pilote, rnd } from './jeu.js?v=19';
-import { corps, poseSinge, dessinerSinge as silhouette, morpho } from './singe.js?v=19';
-import { espece } from './especes.js?v=19';
-import { chargerPeau, dessinerPeau } from './peau.js?v=19';
+import { Jeu, MONDES, pilote, rnd } from './jeu.js?v=20';
+import { corps, poseSinge, dessinerSinge as silhouette, morpho } from './singe.js?v=20';
+import { espece } from './especes.js?v=20';
+import { chargerPeau, dessinerPeau } from './peau.js?v=20';
 // ?peau=araignee : le singe peint à la place de la silhouette.
 // ?espece=gibbon : le corps et les réglages de ce singe ; avec ?peau=gibbon, ses pièces peintes.
 const QS = new URLSearchParams(location.search), ESP = espece(QS.get('espece') || QS.get('peau') || 'araignee'), MORPHO = morpho(ESP.corps), PERCHE = MORPHO.PERCHE;
