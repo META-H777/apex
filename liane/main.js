@@ -1,14 +1,14 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des skins.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=20';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=20';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=20';
-import { ESPECES, COMPETENCES, espece } from './especes.js?v=20';
-import { chargerPeau, dessinerPeau } from './peau.js?v=20';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=20';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=21';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=21';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=21';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=21';
+import { chargerPeau, dessinerPeau } from './peau.js?v=21';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=21';
 
-const VERSION = 'v0.9.1';
+const VERSION = 'v0.10';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -158,20 +158,57 @@ function ouvrirClassement() {
 function ouvrirSinges() {
   $('gListe').innerHTML = ESPECES.map((e) => {
     const choisi = esp.id === e.id, pts = COMPETENCES.map(([k, nom]) => `<li><span>${nom}</span><em>${'<i class="p"></i>'.repeat(e.points[k])}${'<i></i>'.repeat(5 - e.points[k])}</em></li>`).join('');
-    return `<button class="singe ${choisi ? 'choisi' : ''}" data-singe="${e.id}"><img src="singes/${e.id}-portrait.png?v=20" alt=""><b>${e.nom}</b><small>${e.mot}</small><ul>${pts}</ul><p>${e.geste}</p><p class="pv"><em>${e.pouvoir.nom}</em> · ${e.pouvoir.texte}</p><span class="etat">${choisi ? 'choisi' : 'choisir'}</span></button>`;
+    return `<button class="singe ${choisi ? 'choisi' : ''}" data-singe="${e.id}"><img src="singes/${e.id}-portrait.png?v=21" alt=""><b>${e.nom}</b><small>${e.mot}</small><ul>${pts}</ul><p>${e.geste}</p><p class="pv"><em>${e.pouvoir.nom}</em> · ${e.pouvoir.texte}</p><span class="etat">${choisi ? 'choisi' : 'choisir'}</span></button>`;
   }).join('');
   $('singes').classList.add('on');
 }
 $('gListe').addEventListener('click', (e) => { const b = e.target.closest('[data-singe]'); if (!b) return; profil.singe = b.dataset.singe; garder(); choisirSinge(profil.singe); accueil(); });
 // Le dressing : le singe choisi, en grand, pendu à une liane ; ses tenues dessous. Les flèches changent de singe.
 const Mp = { mode: 'swing', idle: false, depart: false, hold: true, li: null };
-function majDressing() {
+// On essaie une tenue en la touchant (dVue : celle qu'on regarde) ; le bouton du bas la porte, ou dit comment l'obtenir.
+let dVue = null, peauVue = null, achat = null;
+const rangDe = (elo) => RANGS.find((r) => r[0] === elo)?.[1] || elo;
+function commentTenue(e, t) {
+  if (!t.elo && !t.prix) return 'de naissance';
+  const cle = cleTenue(e, t), n = profil.dressing.numeros[cle], ed = t.edition;
+  const edition = ed ? (ed.type === 'unique' ? 'exemplaire unique' : `limitée · ${ed.total} ex. numérotés`) : '';
+  if (aTenue(e, t)) return t.elo ? 'gagnée au classement' : n ? `à toi · n° ${n} / ${ed.total}` : ed ? 'à toi · ' + edition : 'à toi';
+  return t.elo ? `rang ${rangDe(t.elo)} · ${t.elo}` : euros(t.prix) + (edition ? ' · ' + edition : '');
+}
+function majDressing(garde) {
   Bp = corps(morpho(esp.corps)); dCx = null; $('dNom').textContent = esp.nom; const portee = tenueDe(esp);
-  $('dListe').innerHTML = esp.tenues.map((t) => `<button class="tenue ${t.id === portee.id ? 'choisi' : ''}" data-tenue="${t.id}"><b>${t.nom}</b><span>${t.id === portee.id ? 'portée' : 'essayer'}</span></button>`).join('');
+  dVue = (garde && esp.tenues.find((t) => t.id === dVue?.id)) || portee; peauVue = sansPeau ? null : peauDe(esp, dVue);
+  $('dListe').innerHTML = esp.tenues.map((t) => `<button class="tenue ${t.id === dVue.id ? 'choisi' : ''} ${aTenue(esp, t) ? '' : 'non'}" data-tenue="${t.id}"><b>${t.nom}${t.id === portee.id ? ' <i>portée</i>' : ''}</b>${t.rarete ? `<em class="r-${t.rarete}">${t.theme || RARETES[t.rarete]}</em>` : ''}<span>${commentTenue(esp, t)}</span></button>`).join('');
+  const b = $('dAction'), a = aTenue(esp, dVue); b.disabled = false;
+  if (dVue.id === portee.id) { b.textContent = 'portée'; b.disabled = true; }
+  else if (a) b.textContent = 'porter';
+  else if (dVue.elo) { b.textContent = `rang ${rangDe(dVue.elo)} : encore ${dVue.elo - profil.elo} points`; b.disabled = true; }
+  else b.textContent = 'acheter · ' + euros(dVue.prix);
+  const pack = PACKS[0], reste = pack.tenues.filter((c) => !profil.dressing.possede.includes(c)).length;
+  $('dPack').hidden = reste === 0; $('dPack').innerHTML = `<b>${pack.nom}</b> ${pack.tenues.length} tenues · ${euros(pack.prix)}`;
+}
+// La boutique est en essai : rien n'est encaissé. Confirmer note l'intention d'achat (sur l'appareil) et prête la tenue.
+function demander(a) { achat = a; $('aTitre').textContent = a.titre; $('aPrix').textContent = euros(a.prix); $('aDetail').textContent = a.detail || ''; $('dAchat').hidden = false; }
+function confirmer() {
+  const D = profil.dressing; D.intentions.push({ quoi: achat.id, prix: achat.prix, quand: new Date().toISOString().slice(0, 16) });
+  for (const cle of achat.cles) {
+    if (!D.possede.includes(cle)) D.possede.push(cle);
+    const [es, te] = cle.split(':'), t = espece(es).tenues.find((x) => x.id === te);
+    if (t && t.edition && t.edition.type === 'limitee' && !D.numeros[cle]) D.numeros[cle] = 1 + Math.floor(Math.random() * t.edition.total);   // numéro d'essai : le vrai viendra du serveur
+  }
+  garder(); journal('boutique : ' + achat.id); $('dAchat').hidden = true; achat = null; majDressing(true);
+}
+function agir() {
+  if (aTenue(esp, dVue)) { profil.tenues[esp.id] = dVue.id; garder(); choisirSinge(esp.id); majDressing(true); return; }
+  if (!dVue.prix) return; const ed = dVue.edition;
+  demander({ id: cleTenue(esp, dVue), titre: dVue.nom + ' · ' + esp.nom, prix: dVue.prix, cles: [cleTenue(esp, dVue)],
+    detail: ed ? (ed.type === 'unique' ? 'Exemplaire unique : un seul joueur au monde la portera.' : `Édition limitée à ${ed.total} exemplaires numérotés, jusqu'au ${ed.fin.split('-').reverse().join('/')}.`) : '' });
 }
 function ouvrirDressing() { majDressing(); $('dressing').classList.add('on'); if (!dRaf) { dLast = performance.now(); dRaf = requestAnimationFrame(dessinerDressing); } }
 function tourner(d) { profil.singe = ESPECES[(ESPECES.indexOf(esp) + d + ESPECES.length) % ESPECES.length].id; garder(); choisirSinge(profil.singe); majDressing(); }
-$('dListe').addEventListener('click', (e) => { const b = e.target.closest('[data-tenue]'); if (!b) return; profil.tenues[esp.id] = b.dataset.tenue; garder(); choisirSinge(esp.id); majDressing(); });
+$('dListe').addEventListener('click', (e) => { const b = e.target.closest('[data-tenue]'); if (!b) return; dVue = esp.tenues.find((t) => t.id === b.dataset.tenue); majDressing(true); });
+clic('dAction', () => { agir(); }); clic('aOui', () => { confirmer(); }); clic('aNon', () => { $('dAchat').hidden = true; achat = null; });
+clic('dPack', () => { const p = PACKS[0]; demander({ id: 'pack:' + p.id, titre: p.nom + ' · ' + p.tenues.length + ' tenues', prix: p.prix, cles: p.tenues, detail: p.tenues.map((c) => { const [es, te] = c.split(':'); return espece(es).tenues.find((x) => x.id === te).nom; }).join(' · ') }); });
 function dessinerDressing(now) {
   dRaf = requestAnimationFrame(dessinerDressing);
   const cv = $('dApercu'), r = cv.getBoundingClientRect(), d = Math.min(3, devicePixelRatio || 1), w = Math.round(r.width * d), h = Math.round(r.height * d);
@@ -185,7 +222,7 @@ function dessinerDressing(now) {
   const milieu = (p.sx + p.hx) / 2; dCx = dCx === null ? milieu : dCx + (milieu - dCx) * Math.min(1, pas * 1.2);
   const Xp = (x) => w * 0.5 + (x - dCx) * Sp, Yp = (y) => h * 0.13 - y * Sp;
   g.strokeStyle = 'rgba(11,42,46,.95)'; g.lineWidth = Math.max(2, Sp * 0.07); g.lineCap = 'round'; g.beginPath(); g.moveTo(Xp(0), Yp(R)); g.lineTo(Xp(p.px), Yp(p.py)); g.lineTo(Xp(p.px + Math.sin(p.bas) * 3), Yp(p.py - Math.cos(p.bas) * 3)); g.stroke();
-  if (peau && peau.pret) dessinerPeau(g, p, peau, Xp, Yp, Sp); else dessinerSinge(g, p, '#0b1d16', Xp, Yp, Sp);
+  if (peauVue && peauVue.pret) dessinerPeau(g, p, peauVue, Xp, Yp, Sp); else dessinerSinge(g, p, '#0b1d16', Xp, Yp, Sp);
 }
 function ouvrirSkins() {
   $('sListe').innerHTML = SKINS.map((s) => {
@@ -211,7 +248,14 @@ const drawMonkey = (p, col) => dessinerSinge(ctx, p, col, X, Y, S);
 // ?singe=gibbon force une espèce pour un essai.
 let esp = espece(profil.singe), peau = null; const peaux = {}, sansPeau = params.get('singe') === 'code';
 // La tenue portée par un singe (?tenue=ninja en force une pour un essai), et l'atlas de pièces qui va avec.
-const tenueDe = (e) => e.tenues.find((t) => t.id === (params.get('tenue') || profil.tenues[e.id])) || e.tenues[0];
+// Une tenue est à soi si elle est de naissance, si le classement l'a donnée (elle reste acquise ensuite), ou si elle a été prise à la boutique.
+function aTenue(e, t) {
+  if (!t.elo && !t.prix) return true; const cle = cleTenue(e, t), D = profil.dressing;
+  if (D.possede.includes(cle)) return true;
+  if (t.elo && profil.elo >= t.elo) { D.possede.push(cle); garder(); return true; }
+  return false;
+}
+const tenueDe = (e) => { const forcee = params.get('tenue'), t = e.tenues.find((x) => x.id === (forcee || profil.tenues[e.id])); return t && (forcee || aTenue(e, t)) ? t : e.tenues[0]; };
 const peauDe = (e, t) => (peaux[t.fichier] = peaux[t.fichier] || chargerPeau(t.fichier, { ...e.allure, ...(t.allure || {}) }));
 function choisirSinge(id) { esp = espece(id); peau = sansPeau ? null : peauDe(esp, tenueDe(esp)); }
 choisirSinge(params.get('singe') && !sansPeau ? params.get('singe') : profil.singe);

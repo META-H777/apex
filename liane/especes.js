@@ -29,7 +29,8 @@ export const ESPECES = [
     points: { vitesse: 3, reprise: 2, saut: 2, allonge: 4, prise: 5 },
     corps: { K: 1.4, tronc: 0.66, bras: 0.37, avant: 0.36, main: 0.2, cuisse: 0.33, jambe: 0.32, pied: 0.17, tete: 0.108, queue: 1.18 },
     allure: { tete: 0.3, tronc: 0.74, queue: 1.5, trait: [0.1, 0.028], ombre: 0.36 },
-    tenues: [{ id: 'naturel', nom: 'Naturel', fichier: 'araignee' }, { id: 'ninja', nom: 'Ninja', fichier: 'araignee-ninja' }] },
+    tenues: [{ id: 'naturel', nom: 'Naturel', fichier: 'araignee' }, { id: 'ninja', nom: 'Ninja', fichier: 'araignee-ninja', rarete: 'commune', elo: 950 },
+      { id: 'samourai', nom: 'Samouraï du Dragon', fichier: 'araignee-samourai', allure: { tete: 0.38 }, rarete: 'epique', prix: 12.99, edition: { type: 'unique' } }] },
   { id: 'gibbon', nom: 'Gibbon', latin: 'Hylobates lar', mot: 'Le plus rapide',
     trait: 'Le roi du balancement : des bras immenses, une vitesse folle. Sans queue, il ne pardonne rien.',
     geste: 'Le corps droit sous le bras, les jambes repliées, il vole debout d\'une prise à l\'autre.',
@@ -37,7 +38,7 @@ export const ESPECES = [
     points: { vitesse: 5, reprise: 2, saut: 3, allonge: 5, prise: 1 },
     corps: { style: 'gibbon', K: 1.4, tronc: 0.58, bras: 0.45, avant: 0.47, main: 0.22, cuisse: 0.27, jambe: 0.27, pied: 0.16, tete: 0.11, queue: 0 },
     allure: { tete: 0.3, tronc: 0.74, queue: 0, trait: [0, 0], ombre: 0.16 },
-    tenues: [{ id: 'naturel', nom: 'Naturel', fichier: 'gibbon' }, { id: 'astronaute', nom: 'Astronaute', fichier: 'gibbon-astronaute', allure: { tete: 0.46 } }] },
+    tenues: [{ id: 'naturel', nom: 'Naturel', fichier: 'gibbon' }, { id: 'astronaute', nom: 'Astronaute', fichier: 'gibbon-astronaute', allure: { tete: 0.46 }, rarete: 'rare', prix: 4.99 }] },
   { id: 'colobe', nom: 'Colobe guéréza', latin: 'Colobus guereza', mot: 'Le grand sauteur',
     trait: 'Ses jambes le jettent très loin et sa cape le porte en l\'air. Bras courts, balancement lent.',
     geste: 'Accroupi sur la liane, mains et pieds dessus, il se détend et saute bras et jambes ouverts.',
@@ -45,7 +46,8 @@ export const ESPECES = [
     points: { vitesse: 2, reprise: 3, saut: 5, allonge: 2, prise: 4 },
     corps: { style: 'colobe', K: 1.4, tronc: 0.7, bras: 0.3, avant: 0.3, main: 0.17, cuisse: 0.36, jambe: 0.36, pied: 0.19, tete: 0.108, queue: 1.25 },
     allure: { tete: 0.3, tronc: 0.74, queue: 1.5, trait: [0.07, 0.05], ombre: 0.3 },
-    tenues: [{ id: 'naturel', nom: 'Naturel', fichier: 'colobe' }, { id: 'pirate', nom: 'Pirate', fichier: 'colobe-pirate', allure: { tete: 0.36 } }] },
+    tenues: [{ id: 'naturel', nom: 'Naturel', fichier: 'colobe' }, { id: 'pirate', nom: 'Pirate', fichier: 'colobe-pirate', allure: { tete: 0.36 }, rarete: 'rare', prix: 2.99 },
+      { id: 'noel', nom: 'Père Noël', fichier: 'colobe-noel', allure: { tete: 0.36 }, rarete: 'saison', theme: 'Noël 2026', prix: 3.99, edition: { type: 'limitee', total: 500, fin: '2026-12-31' } }] },
   { id: 'tamarin', nom: 'Tamarin-lion doré', latin: 'Leontopithecus rosalia', mot: 'Le plus vif',
     trait: 'Minuscule et nerveux : il repart en un éclair. Ses petits bras l\'obligent à viser juste.',
     geste: 'Collé à la liane comme un écureuil, il bondit tout étiré.',
@@ -53,7 +55,17 @@ export const ESPECES = [
     points: { vitesse: 4, reprise: 5, saut: 4, allonge: 1, prise: 2 },
     corps: { style: 'tamarin', K: 1.05, tronc: 0.62, bras: 0.28, avant: 0.28, main: 0.18, cuisse: 0.29, jambe: 0.3, pied: 0.17, tete: 0.13, queue: 1.3 },
     allure: { tete: 0.42, tronc: 0.74, queue: 1.2, trait: [0.07, 0.03], ombre: 0.2 },
-    tenues: [{ id: 'naturel', nom: 'Naturel', fichier: 'tamarin' }, { id: 'rockeur', nom: 'Rockeur', fichier: 'tamarin-rockeur', allure: { tete: 0.46 } }] },
+    tenues: [{ id: 'naturel', nom: 'Naturel', fichier: 'tamarin' }, { id: 'rockeur', nom: 'Rockeur', fichier: 'tamarin-rockeur', allure: { tete: 0.46 }, rarete: 'commune', elo: 1100 }] },
 ];
 for (const e of ESPECES) e.regles = regles(e.points, e.pouvoir.id);
+
+// ---------- La boutique du dressing ----------
+// Une tenue s'obtient de l'une de ces façons : elle est de naissance (ni elo ni prix), elle se gagne au classement (elo : le seuil à atteindre),
+// ou elle s'achète (prix, en euros, de 0,99 à 12,99). Une tenue achetée peut être une édition : limitée et numérotée (total d'exemplaires, date de fin),
+// ou unique (un seul exemplaire au monde). theme : la saison, la fête ou l'événement auquel elle est liée.
+// Rien n'est encaissé pour l'instant : il n'y a ni serveur ni paiement. La boutique note l'intention d'achat et prête la tenue (voir main.js).
+export const RARETES = { commune: 'Commune', rare: 'Rare', saison: 'Saison', epique: 'Épique' };
+export const PACKS = [{ id: 'depart', nom: 'Pack dressing', prix: 9.99, tenues: ['araignee:ninja', 'tamarin:rockeur', 'colobe:pirate', 'gibbon:astronaute', 'colobe:noel'] }];
+export const cleTenue = (e, t) => e.id + ':' + t.id;
+export const euros = (p) => p.toFixed(2).replace('.', ',') + ' €';
 export const espece = (id) => ESPECES.find((e) => e.id === id) || ESPECES[0];
