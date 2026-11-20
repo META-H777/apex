@@ -1,14 +1,15 @@
-// LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des skins.
+// LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des tenues.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
-// Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=22';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=22';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=22';
-import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=22';
-import { chargerPeau, dessinerPeau } from './peau.js?v=22';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=22';
+// Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js, les dessins de l'interface dans ui.js.
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=23';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=23';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=23';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=23';
+import { chargerPeau, dessinerPeau } from './peau.js?v=23';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=23';
+import { embleme, ICONE, DEFS, compter } from './ui.js?v=23';
 
-const VERSION = 'v0.10.1';
+const VERSION = 'v0.11';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -25,6 +26,7 @@ setPalette(monde.id);
 
 // ---------- L'écran ----------
 let W = 0, H = 0, S = 1, baseY = 0, D = null, portrait = false, dpr = 1, qualite = 1, ancre = 0.44, vue = 0.44;
+let gel = false, unTour = false;       // un panneau couvre le jeu : l'image de la forêt est figée derrière lui (unTour : la redessiner une fois)
 function resize() {
   dpr = Math.max(1, Math.min(devicePixelRatio || 1, 2) * qualite);
   W = cv.width = Math.round(innerWidth * dpr); H = cv.height = Math.round(innerHeight * dpr);
@@ -32,8 +34,7 @@ function resize() {
   // Le singe est tenu au milieu de l'écran, et l'on voit toujours la liane qui vient.
   // Téléphone debout : on recule (22 m de large), et le jeu occupe une bande au milieu, entre le feuillage du haut et les cimes du bas.
   if (portrait) { S = Math.min(W / 22, H / 24); baseY = Math.round(H * 0.5 + 6.6 * S); ancre = 0.41; } else { S = H / 14; baseY = H - 0.95 * S; ancre = 0.47; }
-  liberer(D); D = buildDecor(W, H, S, baseY, +(params.get('decor') || 7));
-  $('tourne').classList.add('vu');                       // le jeu se joue maintenant aussi bien debout que couché
+  liberer(D); D = buildDecor(W, H, S, baseY, +(params.get('decor') || 7)); unTour = true;
 }
 // Les images de l'ancien décor sont vidées tout de suite : sur téléphone, la mémoire des images est comptée, et la dépasser recharge la page.
 function liberer(d, vu = new Set()) { if (!d || typeof d !== 'object' || vu.has(d)) return; vu.add(d); if (typeof d.getContext === 'function') { d.width = d.height = 0; return; } for (const k in d) liberer(d[k], vu); }
@@ -41,13 +42,15 @@ function liberer(d, vu = new Set()) { if (!d || typeof d !== 'object' || vu.has(
 // ---------- L'état de la partie ----------
 let jeu, M, B, pil, camX = 0, camLead = 3, camDy = 0, time = 0, last = performance.now() / 1000;
 let phase = 'accueil';                 // accueil, course ou fin
-let parcours = PARCOURS[0], rival = null, G = null, Bg = null, t = 0, mortT = 0, depasse = false, ecartT = -9, ignoreUp = false;
+let parcours = PARCOURS[0], rival = null, G = null, Bg = null, t = 0, mortT = 0, depasse = false, ecartT = -9;
 let classe = false, parti = false, aLever = false, appuiFrais = false;     // duel classé ou non ; premier geste fait ; un lever de doigt en attente du prochain pas
 let accueilT = -9, aide = 9, arcVu = null, arcT = 0, cransVus = -1, distVue = -1, nuitVue = '', fluide = 0.016, mesureT = 0;
+let lancement = false, vsPret = false, vsFin = 0, conseil = '', ongletVu = 'jouer', segVu = 'route', pisteMoi = -1, pisteLui = -1;
 const Mg = {}, Ma = {}, trail = [], rings = [], perche = { x: 0, y: 0 };
-let Ba = null, chargeVue = -1, pouvoirT = 0, dRaf = 0, dT = 0, dLast = 0, Bp = null, dCx = null;
+let Ba = null, chargeVue = -1, pouvoirT = 0, dRaf = 0, dT = 0, dLast = 0, Bp = null;
 const X = (x) => (x - camX) * S + W * vue, Y = (y) => baseY - y * S + camDy;
-function scene(seed, nuit) { jeu = new Jeu(seed, nuit, monde, esp.regles); M = jeu.M; B = corps(morpho(esp.corps)); perche.x = M.x; perche.y = M.y - B.m.PERCHE; pil = { gout: 0.9 }; camX = M.x + 3; camLead = 3; trail.length = 0; rings.length = 0; mortT = 0; arcVu = null; }
+const hasard = () => (Math.random() * 1e9) | 0;
+function scene(seed, nuit) { jeu = new Jeu(seed, nuit, monde, esp.regles); M = jeu.M; B = corps(morpho(esp.corps)); perche.x = M.x; perche.y = M.y - B.m.PERCHE; pil = { gout: 0.9 }; camX = M.x + 3; camLead = 3; trail.length = 0; rings.length = 0; mortT = 0; arcVu = null; unTour = true; }
 const dire = (txt) => { $('note').textContent = txt; $('note').classList.remove('vu'); };
 const taire = () => $('note').classList.add('vu');
 // Le bouton du pouvoir : un anneau qui se remplit, s'allume quand le pouvoir est chargé, et disparaît une fois qu'il a servi.
@@ -55,59 +58,110 @@ function majPouvoir() {
   const c = M.sauve ? -1 : Math.round(jeu.charge * 24) / 24; if (c === chargeVue) return; chargeVue = c;
   const el = $('pouvoir'); el.style.setProperty('--c', Math.max(0, c)); el.classList.toggle('pret', c >= 1); el.classList.toggle('servi', c < 0);
 }
-function pouvoir(source) { if (phase !== 'course' || window.LIANE.pause) return; if (jeu.pouvoir()) journal('pouvoir ' + esp.pouvoir.id + ' : ' + source); }
+function pouvoir(source) { if (phase !== 'course' || window.LIANE.pause || vsPret) return; if (jeu.pouvoir()) journal('pouvoir ' + esp.pouvoir.id + ' : ' + source); }
 function majCrans(n) { if (n === cransVus) return; cransVus = n; const el = $('crans').children; for (let i = 0; i < el.length; i++) el[i].classList.toggle('on', i < n); }
 
+// ---------- L'accueil ----------
+// La part du chemin faite vers le rang suivant, de 0 à 1. Le bronze est compté à partir de 700 : c'est là que jouent les rivaux les plus faibles.
+function avance(elo) { const r = rang(elo); if (!r.suivant) return 1; const bas = r.i ? r.bas : 700; return clamp((elo - bas) / (r.suivant[0] - bas), 0.04, 1); }
+const suite = (elo) => { const r = rang(elo); return r.suivant ? r.suivant[1] + ' dans ' + (r.suivant[0] - elo) + ' pts' : 'rang le plus haut'; };
+const ordinal = (n) => n + (n === 1 ? 'er' : 'e');
+const visage = (e) => `singes/${e.id}-portrait.png?v=23`;
 function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
-  $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom;
-  $('aPos').textContent = pos + (pos === 1 ? 'er' : 'e') + ' sur ' + cl.length;
-  $('aSuite').textContent = r.suivant ? r.suivant[1] + ' à ' + r.suivant[0] : 'rang le plus haut';
+  $('aEmb').innerHTML = embleme(r.i, 46); $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom; $('aBarre').style.width = avance(profil.elo) * 100 + '%'; $('aSuite').textContent = suite(profil.elo);
+  $('aPos').innerHTML = pos + '<sup>' + (pos === 1 ? 'er' : 'e') + '</sup>'; $('aSur').textContent = 'sur ' + cl.length;
   const i = MONDES.indexOf(monde), rec = (profil.records || {})[monde.id];
-  $('mNom').textContent = monde.nom; $('mInfo').textContent = (monde.essai ? 'à l\'essai : des feuilles sur lesquelles on rebondit' : 'niveau ' + (i + 1) + ' sur ' + MONDES.filter((m) => !m.essai).length) + (rec ? ' · record ' + rec + ' m' : '');
+  $('mNom').textContent = monde.essai ? 'Tremplins' : monde.nom;
+  $('mInfo').textContent = monde.essai ? 'à l\'essai' : rec ? 'record ' + rec + ' m' : 'niveau ' + (i + 1) + '/' + MONDES.filter((m) => !m.essai).length;
+  $('mPoints').innerHTML = MONDES.map((m, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
+  const tn = tenueDe(esp); $('aSingeImg').src = visage(esp); $('aSingeNom').textContent = esp.nom; $('aSingeTenue').textContent = tn.id === 'naturel' ? 'ton singe' : tn.nom;
+  $('aMise').textContent = monde.essai ? 'entraînement · hors classement' : 'duel classé · ' + monde.nom;
 }
 function changerMonde(pas) {
-  if (phase !== 'accueil') return; accueilT = time;
+  if (phase !== 'accueil' || lancement) return; accueilT = time;
   const i = (MONDES.indexOf(monde) + pas + MONDES.length) % MONDES.length; monde = MONDES[i]; profil.monde = i; garder();
-  setPalette(monde.id); resize(); scene((Math.random() * 1e9) | 0, false); majAccueil();
+  setPalette(monde.id); resize(); scene(hasard(), false); majAccueil();
+}
+// Les onglets : jouer (la forêt), et trois panneaux posés par-dessus. Sous un panneau, l'image de la forêt est figée : le téléphone ne dessine pas ce qu'on ne voit pas.
+const PANNEAUX = ['singes', 'boutique', 'rangs'];
+function onglet(nom, seg) {
+  if (phase !== 'accueil' || lancement) return;
+  ongletVu = nom; accueilT = time; fermerFiche(); if (seg) segVu = seg;
+  if (nom === 'singes') majSinges(); else if (nom === 'boutique') majBoutique(); else if (nom === 'rangs') majRangs(); else majAccueil();
+  for (const id of PANNEAUX) { $(id).classList.toggle('on', id === nom); if (id === nom) $(id).scrollTop = 0; }
+  $('accueil').classList.toggle('on', nom === 'jouer');
+  for (const b of $('onglets').children) b.classList.toggle('actif', b.dataset.onglet === nom);
+  gel = nom !== 'jouer';
+  if (nom === 'singes') { const c = $('gListe').querySelector('.choisi'); if (c) $('gListe').scrollLeft = c.offsetLeft - ($('gListe').clientWidth - c.offsetWidth) / 2; }
+  if (nom === 'rangs') majSeg();
 }
 function accueil() {
-  doigts.clear(); phase = 'accueil'; accueilT = time; scene((Math.random() * 1e9) | 0, false); majAccueil(); journal('accueil');
-  $('fin').classList.remove('pret');
-  for (const id of ['fin', 'hud', 'classement', 'skins', 'singes', 'dressing']) $(id).classList.remove('on');
-  if (dRaf) { cancelAnimationFrame(dRaf); dRaf = 0; }
-  $('accueil').classList.add('on'); taire();
+  if (lancement) return;
+  doigts.clear(); phase = 'accueil'; accueilT = time; scene(hasard(), false); journal('accueil');
+  $('fin').classList.remove('pret'); for (const id of ['fin', 'hud', 'duel']) $(id).classList.remove('on');
+  $('onglets').classList.remove('cache'); taire(); onglet('jouer');
 }
+
+// ---------- Lancer une partie ----------
+// Le bouton Jouer annonce d'abord le duel : toi, ton rival, ce que vaut la partie. Puis la forêt s'ouvre.
+function defier(source) {
+  if (lancement || (phase !== 'accueil' && phase !== 'fin')) return;
+  if (auto) { lancer(false, source); return; }
+  lancement = true; vsPret = false; fermerFiche();
+  parcours = PARCOURS[(Math.random() * PARCOURS.length) | 0]; rival = adversaire(profil.elo, rival);
+  const cl = !monde.essai, rm = rang(profil.elo), rl = rang(rival.elo), tr = skinById(rival.skin).trail;
+  $('vTitre').textContent = (cl ? 'duel classé' : 'entraînement') + ' · ' + (monde.essai ? 'tremplins' : monde.nom);
+  $('vMoiImg').src = visage(esp); $('vMoiEmb').innerHTML = embleme(rm.i, 22); $('vMoiElo').textContent = profil.elo; $('vMoiRang').textContent = rm.nom;
+  $('vLuiAv').textContent = rival.nom[0]; $('vLuiAv').style.setProperty('--c', tr ? `rgb(${tr})` : 'rgba(255,246,220,.35)');
+  $('vLuiNom').textContent = rival.nom; $('vLuiEmb').innerHTML = embleme(rl.i, 22); $('vLuiElo').textContent = rival.elo; $('vLuiRang').textContent = rl.nom;
+  $('vMise').innerHTML = cl ? `<span class="plus">Victoire +${gain(profil, rival.elo, true)}</span><span class="moins">Défaite −${Math.abs(gain(profil, rival.elo, false))}</span>` : '<span>Hors classement : ton Elo ne bouge pas</span>';
+  $('duel').classList.add('on'); $('onglets').classList.add('cache'); $('accueil').classList.remove('on'); $('fin').classList.remove('on', 'pret');
+  // La course du rival se calcule pendant l'annonce : la partie démarre ensuite sans à-coup.
+  setTimeout(() => { lancer(false, source, true); vsPret = true; vsFin = setTimeout(fermerVs, 1900); }, 90);
+}
+function fermerVs() { if (!vsPret) return; clearTimeout(vsFin); vsPret = false; lancement = false; $('duel').classList.remove('on'); $('hud').classList.add('on'); if (phase === 'course' && M.idle) dire(conseil); }
 // Un duel classé se joue contre un nouveau rival. Rejouer le même parcours contre le même rival est un entraînement : l'Elo ne bouge pas.
-// Le niveau d'essai et le pilote automatique ne comptent jamais.
-function lancer(rejouer, source = 'code') {
+// Le niveau d'essai et le pilote automatique ne comptent jamais. choisi : le rival et le parcours viennent d'être tirés par l'annonce.
+function lancer(rejouer, source = 'code', choisi = false) {
   rejouer = rejouer && !!rival; journal((rejouer ? 'entraînement lancé : ' : 'duel lancé : ') + source); $('fin').classList.remove('pret'); doigts.clear(); aLever = appuiFrais = false;
-  if (!rejouer) { parcours = PARCOURS[(Math.random() * PARCOURS.length) | 0]; rival = adversaire(profil.elo, rival); }
-  classe = !rejouer && !auto && !monde.essai; parti = false;
+  if (!rejouer && !choisi) { parcours = PARCOURS[(Math.random() * PARCOURS.length) | 0]; rival = adversaire(profil.elo, rival); }
+  classe = !rejouer && !auto && !monde.essai; parti = false; gel = false;
   G = fantome(parcours, rival, monde); Bg = corps(); scene(parcours, true);
-  phase = 'course'; t = 0; depasse = false; ecartT = -9; distVue = -1; nuitVue = ''; majCrans(0); chargeVue = -2; pouvoirT = 0; $('pNom').textContent = esp.pouvoir.nom; majPouvoir();
+  phase = 'course'; t = 0; depasse = false; ecartT = -9; distVue = -1; nuitVue = ''; pisteMoi = pisteLui = -1; majCrans(0); chargeVue = -2; pouvoirT = 0; $('pNom').textContent = esp.pouvoir.nom; majPouvoir();
   aide = profil.v + profil.d < 3 ? 0 : 9;                // les premières parties, le jeu dit quoi faire, liane après liane
-  for (const id of ['accueil', 'fin', 'classement', 'skins', 'singes', 'dressing']) $(id).classList.remove('on');
-  $('hud').classList.add('on'); $('chrono').textContent = '0 m'; $('ecart').className = 'maj'; $('nuit').classList.remove('on');
+  for (const id of ['accueil', 'fin', ...PANNEAUX]) $(id).classList.remove('on'); fermerFiche();
+  $('onglets').classList.add('cache'); $('hud').classList.toggle('on', !choisi); $('chrono').textContent = '0'; $('ecart').className = 'bulle'; $('nuit').classList.remove('on');
   // La distance du rival ne s'affiche qu'une fois parti : on ne choisit pas ses adversaires.
-  $('hMoi').textContent = classe ? 'toi · ' + profil.elo : 'toi · entraînement'; $('hLui').textContent = rival.nom + ' · ' + rival.elo;
-  dire(aide === 0 ? 'pose le doigt et tiens' : 'tiens, puis lâche dans l\'arc doré');
+  $('hMoi').textContent = classe ? 'toi · ' + profil.elo : 'entraînement'; $('hLui').textContent = rival.nom + ' · ' + rival.elo;
+  conseil = aide === 0 ? 'pose le doigt et tiens' : 'tiens, puis lâche dans l\'arc doré'; if (choisi) taire(); else dire(conseil);
 }
 // La partie est finie : celui qui est allé le plus loin gagne.
 function finir() {
-  const dist = Math.round(Math.max(0, M.x)), lui = Math.round(G.dist), gagne = dist > lui, avant = profil.elo, d = classe ? gain(profil, rival.elo, gagne) : 0, rAvant = rang(avant).nom;
-  if (classe) { profil.elo = Math.max(100, profil.elo + d); if (gagne) profil.v++; else profil.d++; profil.enCours = null; }
+  const dist = Math.round(Math.max(0, M.x)), lui = Math.round(G.dist), gagne = dist > lui, avant = profil.elo, d = classe ? gain(profil, rival.elo, gagne) : 0, rA = rang(avant);
+  if (classe) { profil.elo = Math.max(100, profil.elo + d); if (gagne) { profil.v++; profil.serie = (profil.serie | 0) + 1; } else { profil.d++; profil.serie = 0; } profil.enCours = null; }
   profil.records = profil.records || {}; const rec = dist > (profil.records[monde.id] || 0); if (rec) profil.records[monde.id] = dist;
   profil.record = Math.max(profil.record || 0, dist);
   garder(); phase = 'fin'; taire(); journal('fin : ' + (M.mort === 'nuit' ? 'nuit' : 'chute') + ' à ' + dist + ' m');
-  const skin = acquerir().pop(), rAp = rang(profil.elo).nom; if (skin) garder();
-  $('fTitre').textContent = gagne ? 'victoire' : 'défaite'; $('fin').classList.toggle('perdu', !gagne);
-  $('fTemps').textContent = dist + ' m';
-  $('fLui').textContent = rival.nom + ' ' + lui + ' m · écart ' + (dist - lui >= 0 ? '+' : '−') + Math.abs(dist - lui) + ' m';
-  $('fCause').textContent = (M.mort === 'nuit' ? 'rattrapé par la nuit' : 'tombé') + (rec ? ' · nouveau record' : ' · record ' + profil.records[monde.id] + ' m');
-  $('fElo').textContent = classe ? avant + ' → ' + profil.elo + ' (' + (d >= 0 ? '+' : '−') + Math.abs(d) + ')' : 'entraînement';
-  $('fPlus').textContent = !classe ? (monde.essai ? 'niveau d\'essai : hors classement' : auto ? 'pilote automatique : hors classement' : 'le classement ne bouge pas') : skin ? 'nouveau skin : ' + skin.nom : rAp !== rAvant ? 'nouveau rang : ' + rAp : rang(profil.elo).nom;
+  const skin = acquerir().pop(), rB = rang(profil.elo); if (skin) garder();
+  const tenue = classe ? ESPECES.flatMap((e) => e.tenues.filter((x) => x.elo && avant < x.elo && profil.elo >= x.elo && aTenue(e, x)).map((x) => x.nom))[0] : null;
+  $('fTitre').textContent = gagne ? 'Victoire' : 'Défaite'; $('fin').classList.toggle('perdu', !gagne);
+  compter($('fTemps'), 0, dist, 700);
+  $('fMoi').textContent = dist + ' m'; $('fLui').textContent = lui + ' m'; $('fLuiNom').textContent = rival.nom; $('fbMoi').style.width = $('fbLui').style.width = '0%';
+  $('fCause').textContent = (M.mort === 'nuit' ? 'rattrapé par la nuit' : 'tombé') + ' · ' + (rec ? 'nouveau record' : 'record ' + profil.records[monde.id] + ' m');
+  $('fEloBloc').classList.toggle('hors', !classe);
+  if (classe) {
+    $('fEmb').innerHTML = embleme(rB.i, 40); $('fRang').textContent = rB.nom; $('fDelta').textContent = (d >= 0 ? '+' : '−') + Math.abs(d); $('fDelta').classList.toggle('baisse', d < 0); $('fSuite').textContent = suite(profil.elo);
+    $('fBarre').style.transition = 'none'; $('fBarre').style.width = (rA.i === rB.i ? avance(avant) : rB.i > rA.i ? 0 : 1) * 100 + '%';
+    compter($('fElo'), avant, profil.elo, 1000);
+  } else $('fHors').textContent = monde.essai ? 'niveau d\'essai : hors classement' : auto ? 'pilote automatique : hors classement' : 'entraînement : ton Elo ne bouge pas';
+  // Ce que la partie a rapporté de plus : un rang, une tenue, une traînée, une série.
+  const plus = []; if (classe) { if (rB.i > rA.i) plus.push('Nouveau rang : ' + rB.nom); if (tenue) plus.push('tenue ' + tenue + ' gagnée'); if (skin) plus.push('traînée ' + skin.nom + ' gagnée'); if (!plus.length && profil.serie >= 2) plus.push(profil.serie + ' victoires de suite'); }
+  $('fPlus').textContent = plus.join(' · ').replace(/^./, (c) => c.toUpperCase());
+  $('bSuivant').lastElementChild.textContent = monde.essai ? 'hors classement' : 'classé · nouveau rival';
   $('hud').classList.remove('on'); $('fin').classList.add('on');
+  const max = Math.max(dist, lui, 1);
+  requestAnimationFrame(() => requestAnimationFrame(() => { $('fbMoi').style.width = dist / max * 100 + '%'; $('fbLui').style.width = lui / max * 100 + '%'; $('fBarre').style.transition = ''; $('fBarre').style.width = avance(profil.elo) * 100 + '%'; }));
   // Les boutons ne répondent qu'après un instant : un doigt qui tapote encore au moment de la chute ne relance pas une partie par accident.
   setTimeout(() => { if (phase === 'fin') $('fin').classList.add('pret'); }, 700);
 }
@@ -123,123 +177,200 @@ function hold(h) {
 }
 const ui = (e) => e.target.closest && e.target.closest('[data-ui]');
 // On compte les doigts posés : le singe ne lâche que lorsque le dernier se lève. Un second doigt ne provoque plus de lâcher involontaire.
+// À l'accueil, toucher la forêt ne lance rien : c'est le bouton Jouer qui lance.
 const doigts = new Set();
 addEventListener('pointerdown', (e) => {
   if (ui(e)) return; e.preventDefault();
-  if (phase === 'accueil') { if (time - accueilT > 0.5) { lancer(false, 'toucher à l\'accueil'); ignoreUp = true; } return; }
+  if (phase !== 'course') return;
   doigts.add(e.pointerId); hold(true);
 }, { passive: false });
-const leve = (e) => { if (ignoreUp) { ignoreUp = false; doigts.clear(); return; } doigts.delete(e.pointerId); if (!doigts.size) hold(false); };
+const leve = (e) => { doigts.delete(e.pointerId); if (!doigts.size) hold(false); };
 addEventListener('pointerup', leve);
 addEventListener('pointercancel', (e) => { journal('doigt annulé par le système'); leve(e); });
 addEventListener('blur', () => { doigts.clear(); hold(false); });
 document.addEventListener('visibilitychange', () => journal(document.hidden ? 'page masquée' : 'page affichée'));
 addEventListener('contextmenu', (e) => e.preventDefault());
-addEventListener('keydown', (e) => { if (e.code !== 'Space' || e.repeat) return; e.preventDefault(); if (phase === 'accueil') { if (time - accueilT > 0.5) lancer(false, 'clavier'); } else if (phase === 'fin') { if ($('fin').classList.contains('pret')) lancer(true, 'clavier'); } else hold(true); });
+addEventListener('keydown', (e) => {
+  if (e.code === 'Escape') { if (!$('dAchat').hidden) { $('dAchat').hidden = true; achat = null; } else fermerFiche(); return; }
+  if (e.code !== 'Space' || e.repeat) return; e.preventDefault();
+  if (vsPret) fermerVs();
+  else if (phase === 'accueil') { if (ongletVu === 'jouer' && time - accueilT > 0.5) defier('clavier'); }
+  else if (phase === 'fin') { if ($('fin').classList.contains('pret')) lancer(true, 'clavier'); }
+  else hold(true);
+});
 addEventListener('keyup', (e) => { if (e.code === 'Space') hold(false); });
 addEventListener('keydown', (e) => { if (!e.repeat && (e.code === 'KeyX' || e.code === 'ShiftLeft' || e.code === 'ShiftRight')) pouvoir('clavier'); });
 $('pouvoir').addEventListener('pointerdown', (e) => { e.preventDefault(); pouvoir('bouton'); });
-const clic = (id, fn) => $(id).addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+const clic = (id, fn) => $(id).addEventListener('click', (e) => { e.stopPropagation(); fn(e); });
 const pret = () => $('fin').classList.contains('pret');
-clic('bSuivant', () => { if (pret()) lancer(false, 'bouton duel suivant'); }); clic('bRevanche', () => { if (pret()) lancer(true, 'bouton rejouer'); }); clic('bAccueil', () => { if (pret()) accueil(); });
+clic('bJouer', () => { if (time - accueilT > 0.3) defier('bouton jouer'); }); clic('duel', () => fermerVs());
+clic('bSuivant', () => { if (pret()) defier('bouton duel suivant'); }); clic('bRevanche', () => { if (pret()) lancer(true, 'bouton rejouer'); }); clic('bAccueil', () => { if (pret()) accueil(); });
 clic('mPrec', () => changerMonde(-1)); clic('mSuiv', () => changerMonde(1));
-clic('bClassement', () => { ouvrirClassement(); }); clic('bSkins', () => { ouvrirSkins(); }); clic('bSinge', () => { ouvrirSinges(); });
-clic('gFermer', () => { $('singes').classList.remove('on'); accueilT = time; });
-clic('bDressing', () => { ouvrirDressing(); }); clic('dFermer', () => { accueil(); }); clic('dPrec', () => { tourner(-1); }); clic('dSuiv', () => { tourner(1); });
-clic('cFermer', () => { $('classement').classList.remove('on'); accueilT = time; }); clic('sFermer', () => { $('skins').classList.remove('on'); accueilT = time; });
+clic('bSinge', () => onglet('singes')); clic('bProfil', () => onglet('rangs', 'route')); clic('bPlace', () => onglet('rangs', 'monde'));
+clic('onglets', (e) => { const b = e.target.closest('[data-onglet]'); if (b) onglet(b.dataset.onglet); });
+clic('rSeg', (e) => { const b = e.target.closest('[data-seg]'); if (b) { segVu = b.dataset.seg; majSeg(); } });
 
-function ouvrirClassement() {
-  const cl = classement();
-  $('cListe').innerHTML = cl.map((c, i) => `<li class="${c.moi ? 'moi' : ''}"><span class="p">${i + 1}</span><i style="background:${skinById(c.skin).trail ? 'rgb(' + skinById(c.skin).trail + ')' : '#0b2a2e'}"></i><span class="n">${c.nom}</span><span class="r">${rang(c.elo).nom}</span><span class="e">${c.elo}</span></li>`).join('');
-  $('classement').classList.add('on');
-  const moi = $('cListe').querySelector('.moi'); if (moi) moi.scrollIntoView({ block: 'center' });
+// ---------- Le classement : ton rang, le chemin des rangs, et le tableau ----------
+const rangDe = (elo) => RANGS.find((r) => r[0] === elo)?.[1] || elo;
+const pastille = (c) => `<span class="rond" style="--c:${c.moi ? 'var(--or)' : skinById(c.skin).trail ? 'rgb(' + skinById(c.skin).trail + ')' : 'rgba(255,246,220,.3)'}">${c.moi ? 'T' : c.nom[0]}</span>`;
+function majRangs() {
+  const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1, n = profil.v + profil.d;
+  $('rMoi').innerHTML = `<span class="emb">${embleme(r.i, 68)}</span><span class="mElo"><b>${profil.elo}</b><em>${r.nom}</em></span><span class="mSuite"><span class="barre"><i style="width:${avance(profil.elo) * 100}%"></i></span><small>${suite(profil.elo)}</small></span>
+<div class="mStats"><div><b>${ordinal(pos)}</b><small>sur ${cl.length}</small></div><div><b>${n}</b><small>duels</small></div><div><b>${n ? Math.round(profil.v / n * 100) + ' %' : '–'}</b><small>victoires</small></div><div><b>${profil.record ? profil.record + ' m' : '–'}</b><small>record</small></div></div>`;
+  // Ce que chaque rang donne : les traînées et les tenues qui se gagnent en montant.
+  const gains = [...SKINS.filter((s) => s.seuil > 0).map((s) => ({ seuil: s.seuil, nom: 'Traînée ' + s.nom, ok: possede(s) })),
+    ...ESPECES.flatMap((e) => e.tenues.filter((x) => x.elo).map((x) => ({ seuil: x.elo, nom: 'Tenue ' + x.nom, ok: aTenue(e, x) })))].sort((a, b) => a.seuil - b.seuil);
+  $('rRoute').innerHTML = RANGS.map(([bas, nom], i) => {
+    const haut = RANGS[i + 1] ? RANGS[i + 1][0] : Infinity, etat = i < r.i ? 'fait' : i === r.i ? 'ici' : 'loin';
+    const g = gains.filter((x) => x.seuil >= bas && x.seuil < haut).map((x) => `<span class="gain ${x.ok ? 'ok' : ''}">${x.ok ? ICONE.coche : ICONE.cadenas}${x.nom} · ${x.seuil}</span>`).join('');
+    return `<div class="palier ${etat}"><span class="emb">${embleme(i, 44)}</span><b>${nom}</b><span class="seuil">${i ? 'à partir de ' + bas + ' Elo' : 'le départ'}</span><span class="etat">${etat === 'fait' ? ICONE.coche + 'atteint' : etat === 'ici' ? 'tu es ici' : 'encore ' + (bas - profil.elo) + ' pts'}</span><div class="gains">${g}</div></div>`;
+  }).reverse().join('');
+  const marche = (c, i) => c ? `<div class="marche ${i === 0 ? 'un' : ''}"><small>${ordinal(i + 1)}</small>${pastille(c)}<b>${c.moi ? 'Toi' : c.nom}</b><strong>${c.elo}</strong></div>` : '<div></div>';
+  $('cPodium').innerHTML = marche(cl[1], 1) + marche(cl[0], 0) + marche(cl[2], 2);
+  $('cListe').innerHTML = cl.slice(3).map((c, i) => `<li class="${c.moi ? 'moi' : ''}"><span class="p">${i + 4}</span>${pastille(c)}<span class="n">${c.moi ? 'Toi' : c.nom}</span><span class="emb">${embleme(rang(c.elo).i, 22)}</span><span class="e">${c.elo}</span></li>`).join('');
 }
-// Le choix du singe : quatre espèces, chacune avec son corps et ses seize points de compétence.
-function ouvrirSinges() {
+function majSeg() {
+  for (const b of $('rSeg').children) b.classList.toggle('actif', b.dataset.seg === segVu);
+  $('rRoute').hidden = segVu !== 'route'; $('rMonde').hidden = segVu !== 'monde';
+}
+
+// ---------- Les singes : quatre espèces, chacune avec son corps, ses seize points, son geste et son pouvoir ----------
+function majSinges() {
+  const defile = $('gListe').scrollLeft;
   $('gListe').innerHTML = ESPECES.map((e) => {
-    const choisi = esp.id === e.id, pts = COMPETENCES.map(([k, nom]) => `<li><span>${nom}</span><em>${'<i class="p"></i>'.repeat(e.points[k])}${'<i></i>'.repeat(5 - e.points[k])}</em></li>`).join('');
-    return `<button class="singe ${choisi ? 'choisi' : ''}" data-singe="${e.id}"><img src="singes/${e.id}-portrait.png?v=22" alt=""><b>${e.nom}</b><small>${e.mot}</small><ul>${pts}</ul><p>${e.geste}</p><p class="pv"><em>${e.pouvoir.nom}</em> · ${e.pouvoir.texte}</p><span class="etat">${choisi ? 'choisi' : 'choisir'}</span></button>`;
+    const choisi = esp.id === e.id, portee = tenueDe(e);
+    const pts = COMPETENCES.map(([k, nom]) => `<span>${nom}</span><span class="jauge">${'<i class="p"></i>'.repeat(e.points[k])}${'<i></i>'.repeat(5 - e.points[k])}</span>`).join('');
+    const tenues = e.tenues.map((x) => `<button class="puce ${x.id === portee.id ? 'portee' : ''}" data-fiche="${cleTenue(e, x)}">${aTenue(e, x) ? '' : ICONE.cadenas}${x.nom}</button>`).join('');
+    return `<article class="singe ${choisi ? 'choisi' : ''}"><div class="sHaut"><img src="${visage(e)}" alt=""><div><b>${e.nom}</b><i>${e.latin}</i><em>${e.mot}</em></div></div>
+<div class="stats">${pts}</div><div class="sTxt"><p class="geste">${e.geste}</p><div class="pouv">${ICONE.eclair}<div><b>${e.pouvoir.nom}</b><span>${e.pouvoir.texte}</span></div></div></div>
+<div class="sTenues">${tenues}</div><button class="btn ${choisi ? 'creux' : 'plein'}" data-singe="${e.id}" ${choisi ? 'disabled' : ''}>${choisi ? 'Choisi' : 'Choisir'}</button></article>`;
   }).join('');
-  $('singes').classList.add('on');
+  $('gListe').scrollLeft = defile;
+  $('sListe').innerHTML = SKINS.map((s) => {
+    const ok = possede(s), choisi = profil.skin === s.id;
+    return `<button class="skin ${ok ? '' : 'non'} ${choisi ? 'choisi' : ''}" data-skin="${s.id}"><i style="background:${s.ink};box-shadow:0 0 0 2px ${s.rim}${s.trail ? ', 0 0 18px rgba(' + s.trail + ',.8)' : ''}"></i><b>${s.nom}</b><span>${choisi ? 'portée' : ok ? 'choisir' : ICONE.cadenas + s.seuil + ' Elo'}</span></button>`;
+  }).join('');
 }
-$('gListe').addEventListener('click', (e) => { const b = e.target.closest('[data-singe]'); if (!b) return; profil.singe = b.dataset.singe; garder(); choisirSinge(profil.singe); accueil(); });
-// Le dressing : le singe choisi, en grand, pendu à une liane ; ses tenues dessous. Les flèches changent de singe.
-const Mp = { mode: 'swing', idle: false, depart: false, hold: true, li: null };
+$('gListe').addEventListener('click', (e) => {
+  const f = e.target.closest('[data-fiche]'); if (f) { ouvrirFiche(...trouver(f.dataset.fiche)); return; }
+  const b = e.target.closest('[data-singe]'); if (!b) return; profil.singe = b.dataset.singe; garder(); choisirSinge(profil.singe); scene(hasard(), false); majSinges();
+});
+$('sListe').addEventListener('click', (e) => { const b = e.target.closest('[data-skin]'); if (!b) return; const s = skinById(b.dataset.skin); if (!possede(s)) return; profil.skin = s.id; garder(); majSinges(); });
+
+// ---------- La boutique ----------
 // Le premier pack d'essai (v0.10) prêtait aussi les deux tenues de classement. Un pack ne contient plus que des tenues payantes :
 // on reprend celles de classement à qui n'a pas encore le rang.
 if (profil.dressing.v < 2) {
   const D = profil.dressing;
-  if (D.intentions.some((i) => i.quoi === 'pack:depart')) D.possede = D.possede.filter((cle) => { const [es, te] = cle.split(':'), t = espece(es).tenues.find((x) => x.id === te); return !(t && t.elo && profil.elo < t.elo); });
+  if (D.intentions.some((i) => i.quoi === 'pack:depart')) D.possede = D.possede.filter((cle) => { const [es, te] = cle.split(':'), x = espece(es).tenues.find((y) => y.id === te); return !(x && x.elo && profil.elo < x.elo); });
   D.v = 2; garder();
 }
-// On essaie une tenue en la touchant (dVue : celle qu'on regarde) ; le bouton du bas la porte, ou dit comment l'obtenir.
-let dVue = null, peauVue = null, achat = null;
-const rangDe = (elo) => RANGS.find((r) => r[0] === elo)?.[1] || elo;
-function commentTenue(e, t) {
-  if (!t.elo && !t.prix) return 'de naissance';
-  const cle = cleTenue(e, t), n = profil.dressing.numeros[cle], ed = t.edition;
-  const edition = ed ? (ed.type === 'unique' ? 'exemplaire unique' : `limitée · ${ed.total} ex. numérotés`) : '';
-  if (aTenue(e, t)) return t.elo ? 'gagnée au classement' : n ? `à toi · n° ${n} / ${ed.total}` : ed ? 'à toi · ' + edition : 'à toi';
-  return t.elo ? `rang ${rangDe(t.elo)} · ${t.elo}` : euros(t.prix) + (edition ? ' · ' + edition : '');
+const trouver = (cle) => { const [es, te] = cle.split(':'), e = espece(es); return [e, e.tenues.find((x) => x.id === te) || e.tenues[0]]; };
+const dateFr = (d) => d.split('-').reverse().join('/');
+const joursRestants = (fin) => Math.ceil((new Date(fin + 'T23:59:59') - Date.now()) / 864e5);
+// Ce qui s'écrit sous une tenue : elle est à toi, elle a un prix, ou elle attend un rang.
+const prixDe = (e, x) => aTenue(e, x) ? `<span class="prix ok">${ICONE.coche}${tenueDe(e).id === x.id ? 'portée' : 'à toi'}</span>` : x.elo ? `<span class="prix">${ICONE.cadenas}rang ${rangDe(x.elo)}</span>` : `<span class="prix">${euros(x.prix)}</span>`;
+function majBoutique() {
+  const A = ESPECES.flatMap((e) => e.tenues.filter((x) => x.elo || x.prix).map((x) => ({ e, x, cle: cleTenue(e, x) })));
+  const une = A.find((a) => a.x.rarete === 'epique'), saison = A.filter((a) => a.x.rarete === 'saison'), reste = A.filter((a) => a !== une && !saison.includes(a));
+  const etiquette = (a) => aTenue(a.e, a.x) ? 'à toi' : euros(a.x.prix);
+  let h = '';
+  if (une) { const unique = une.x.edition && une.x.edition.type === 'unique';
+    h += `<button class="une" data-fiche="${une.cle}"><span class="uTxt"><em class="tag r-epique">Épique${unique ? ' · unique' : ''}</em><h4>${une.x.nom}</h4><p>${une.e.nom}.${unique ? ' Un seul exemplaire au monde.' : ''}</p><span class="prix">${etiquette(une)}</span></span><canvas data-vig="${une.cle}"></canvas></button>`; }
+  for (const a of saison) { const ed = a.x.edition, j = ed && ed.fin ? joursRestants(ed.fin) : 0;
+    h += `<button class="une saison" data-fiche="${a.cle}"><span class="uTxt"><em class="tag r-saison">${a.x.theme || 'Saison'}</em><h4>${a.x.nom}</h4><p>${a.e.nom}.${ed ? ` ${ed.total} exemplaires numérotés${j > 0 ? `, encore ${j} jour${j > 1 ? 's' : ''}` : ''}.` : ''}</p><span class="prix">${etiquette(a)}</span></span><canvas data-vig="${a.cle}"></canvas></button>`; }
+  const pack = PACKS[0], complet = pack.tenues.length >= pack.taille, manque = pack.tenues.filter((c) => !profil.dressing.possede.includes(c)).length;
+  if (!(complet && manque === 0)) h += `<button class="pack" data-pack="${pack.id}" ${complet ? '' : 'disabled'}><b>${pack.nom}</b><small>${pack.taille} tenues payantes${complet ? '' : ` · bientôt : ${pack.tenues.length} sur ${pack.taille} sont prêtes`}</small><strong>${euros(pack.prix)}</strong></button>`;
+  const article = (a) => `<button class="article" data-fiche="${a.cle}"><canvas class="f-${a.x.rarete}" data-vig="${a.cle}"></canvas><em class="tag r-${a.x.rarete}">${a.x.theme || RARETES[a.x.rarete]}</em><span class="aTxt"><b>${a.x.nom}</b><small>${a.e.nom}</small>${prixDe(a.e, a.x)}</span></button>`;
+  const rayon = (titre, liste) => liste.length ? `<h3>${titre}</h3><div class="grille">${liste.map(article).join('')}</div>` : '';
+  h += rayon('En boutique', reste.filter((a) => a.x.prix)) + rayon('À gagner au classement', reste.filter((a) => a.x.elo));
+  $('bqCorps').innerHTML = h;
+  for (const c of $('bqCorps').querySelectorAll('canvas[data-vig]')) vignette(c, ...trouver(c.dataset.vig));
 }
-function majDressing(garde) {
-  Bp = corps(morpho(esp.corps)); dCx = null; $('dNom').textContent = esp.nom; const portee = tenueDe(esp);
-  dVue = (garde && esp.tenues.find((t) => t.id === dVue?.id)) || portee; peauVue = sansPeau ? null : peauDe(esp, dVue);
-  $('dListe').innerHTML = esp.tenues.map((t) => `<button class="tenue ${t.id === dVue.id ? 'choisi' : ''} ${aTenue(esp, t) ? '' : 'non'}" data-tenue="${t.id}"><b>${t.nom}${t.id === portee.id ? ' <i>portée</i>' : ''}</b>${t.rarete ? `<em class="r-${t.rarete}">${t.theme || RARETES[t.rarete]}</em>` : ''}<span>${commentTenue(esp, t)}</span></button>`).join('');
-  const b = $('dAction'), a = aTenue(esp, dVue); b.disabled = false;
-  if (dVue.id === portee.id) { b.textContent = 'portée'; b.disabled = true; }
-  else if (a) b.textContent = 'porter';
-  else if (dVue.elo) { b.textContent = `rang ${rangDe(dVue.elo)} : encore ${dVue.elo - profil.elo} points`; b.disabled = true; }
-  else b.textContent = 'acheter · ' + euros(dVue.prix);
-  const pack = PACKS[0], reste = pack.tenues.filter((c) => !profil.dressing.possede.includes(c)).length, complet = pack.tenues.length >= pack.taille;
-  $('dPack').hidden = complet && reste === 0; $('dPack').disabled = !complet;
-  $('dPack').innerHTML = `<b>${pack.nom}</b> ${pack.taille} tenues payantes · ${euros(pack.prix)}${complet ? '' : ` · bientôt (${pack.tenues.length} sur ${pack.taille} prêtes)`}`;
+$('bqCorps').addEventListener('click', (e) => {
+  const f = e.target.closest('[data-fiche]'); if (f) { ouvrirFiche(...trouver(f.dataset.fiche)); return; }
+  const b = e.target.closest('[data-pack]'); if (!b || b.disabled) return; const p = PACKS.find((x) => x.id === b.dataset.pack);
+  demander({ id: 'pack:' + p.id, titre: p.nom + ' · ' + p.tenues.length + ' tenues', prix: p.prix, cles: p.tenues, detail: p.tenues.map((c) => trouver(c)[1].nom).join(' · ') });
+});
+
+// La fiche d'une tenue : le singe en grand, pendu à sa liane, et ce qu'il faut pour l'avoir.
+const Mp = { mode: 'swing', idle: false, depart: false, hold: true, li: null };
+let fEsp = null, dVue = null, peauVue = null, achat = null; const cadreFiche = { x: null };
+function ouvrirFiche(e, x) {
+  fEsp = e; dVue = x; Bp = corps(morpho(e.corps)); cadreFiche.x = null; peauVue = sansPeau ? null : peauDe(e, x); majFiche();
+  $('fiche').classList.add('on'); if (!dRaf) { dLast = performance.now(); dRaf = requestAnimationFrame(dessinerFiche); }
+}
+function fermerFiche() { $('fiche').classList.remove('on'); $('dAchat').hidden = true; achat = null; if (dRaf) { cancelAnimationFrame(dRaf); dRaf = 0; } }
+const ficheOuverte = () => $('fiche').classList.contains('on');
+function majFiche() {
+  const e = fEsp, x = dVue, a = aTenue(e, x), portee = esp.id === e.id && tenueDe(e).id === x.id, ed = x.edition, r = x.rarete || 'naturel', n = profil.dressing.numeros[cleTenue(e, x)];
+  $('dFond').className = 'fVue f-' + r; $('dRare').className = 'tag r-' + r; $('dRare').textContent = x.theme || RARETES[x.rarete] || 'De naissance';
+  $('dNom').textContent = x.nom; $('dSinge').textContent = 'Tenue entière · ' + e.nom;
+  $('dTexte').textContent = !x.elo && !x.prix ? 'Sa robe de naissance : elle est à toi depuis le début.'
+    : x.elo ? (a ? 'Gagnée au classement : elle reste à toi, même si ton Elo redescend.' : `Elle ne s'achète pas : elle se gagne au rang ${rangDe(x.elo)} (${x.elo} Elo). Il te manque ${x.elo - profil.elo} points.`)
+    : (ed && ed.type === 'unique' ? 'Exemplaire unique : un seul joueur au monde la portera.' : ed ? `Édition limitée à ${ed.total} exemplaires numérotés, jusqu'au ${dateFr(ed.fin)}.` : 'Une tenue entière pour ce singe.') + (a ? (n ? ` Tu as le n° ${n} (numéro d'essai).` : '') + ' Elle t\'est prêtée pendant l\'essai de la boutique.' : '');
+  const b = $('dAction'), txt = b.firstElementChild; b.disabled = false;
+  if (portee) { txt.textContent = 'Portée'; b.disabled = true; }
+  else if (a) txt.textContent = esp.id === e.id ? 'Porter' : 'Porter avec ce singe';
+  else if (x.elo) { txt.textContent = 'Rang ' + rangDe(x.elo) + ' requis'; b.disabled = true; }
+  else if (ed && ed.fin && joursRestants(ed.fin) <= 0) { txt.textContent = 'Édition terminée'; b.disabled = true; }
+  else txt.textContent = 'Acheter · ' + euros(x.prix);
 }
 // La boutique est en essai : rien n'est encaissé. Confirmer note l'intention d'achat (sur l'appareil) et prête la tenue.
 function demander(a) { achat = a; $('aTitre').textContent = a.titre; $('aPrix').textContent = euros(a.prix); $('aDetail').textContent = a.detail || ''; $('dAchat').hidden = false; }
+function rafraichir() { if (ficheOuverte()) majFiche(); if (ongletVu === 'singes') majSinges(); else if (ongletVu === 'boutique') majBoutique(); }
 function confirmer() {
+  if (!achat) return;
   const D = profil.dressing; D.intentions.push({ quoi: achat.id, prix: achat.prix, quand: new Date().toISOString().slice(0, 16) });
   for (const cle of achat.cles) {
     if (!D.possede.includes(cle)) D.possede.push(cle);
-    const [es, te] = cle.split(':'), t = espece(es).tenues.find((x) => x.id === te);
-    if (t && t.edition && t.edition.type === 'limitee' && !D.numeros[cle]) D.numeros[cle] = 1 + Math.floor(Math.random() * t.edition.total);   // numéro d'essai : le vrai viendra du serveur
+    const x = trouver(cle)[1];
+    if (x && x.edition && x.edition.type === 'limitee' && !D.numeros[cle]) D.numeros[cle] = 1 + Math.floor(Math.random() * x.edition.total);   // numéro d'essai : le vrai viendra du serveur
   }
-  garder(); journal('boutique : ' + achat.id); $('dAchat').hidden = true; achat = null; majDressing(true);
+  garder(); journal('boutique : ' + achat.id); $('dAchat').hidden = true; achat = null; rafraichir();
 }
+// Le bouton de la fiche : porter la tenue (et prendre ce singe), ou l'acheter.
 function agir() {
-  if (aTenue(esp, dVue)) { profil.tenues[esp.id] = dVue.id; garder(); choisirSinge(esp.id); majDressing(true); return; }
-  if (!dVue.prix) return; const ed = dVue.edition;
-  demander({ id: cleTenue(esp, dVue), titre: dVue.nom + ' · ' + esp.nom, prix: dVue.prix, cles: [cleTenue(esp, dVue)],
-    detail: ed ? (ed.type === 'unique' ? 'Exemplaire unique : un seul joueur au monde la portera.' : `Édition limitée à ${ed.total} exemplaires numérotés, jusqu'au ${ed.fin.split('-').reverse().join('/')}.`) : '' });
+  const e = fEsp, x = dVue; if (!e) return;
+  if (aTenue(e, x)) { profil.tenues[e.id] = x.id; profil.singe = e.id; garder(); choisirSinge(e.id); scene(hasard(), false); rafraichir(); return; }
+  if (!x.prix) return; const ed = x.edition;
+  demander({ id: cleTenue(e, x), titre: x.nom + ' · ' + e.nom, prix: x.prix, cles: [cleTenue(e, x)],
+    detail: ed ? (ed.type === 'unique' ? 'Exemplaire unique : un seul joueur au monde la portera.' : `Édition limitée à ${ed.total} exemplaires numérotés, jusqu'au ${dateFr(ed.fin)}.`) : '' });
 }
-function ouvrirDressing() { majDressing(); $('dressing').classList.add('on'); if (!dRaf) { dLast = performance.now(); dRaf = requestAnimationFrame(dessinerDressing); } }
-function tourner(d) { profil.singe = ESPECES[(ESPECES.indexOf(esp) + d + ESPECES.length) % ESPECES.length].id; garder(); choisirSinge(profil.singe); majDressing(); }
-$('dListe').addEventListener('click', (e) => { const b = e.target.closest('[data-tenue]'); if (!b) return; dVue = esp.tenues.find((t) => t.id === b.dataset.tenue); majDressing(true); });
-clic('dAction', () => { agir(); }); clic('aOui', () => { confirmer(); }); clic('aNon', () => { $('dAchat').hidden = true; achat = null; });
-clic('dPack', () => { const p = PACKS[0]; demander({ id: 'pack:' + p.id, titre: p.nom + ' · ' + p.tenues.length + ' tenues', prix: p.prix, cles: p.tenues, detail: p.tenues.map((c) => { const [es, te] = c.split(':'); return espece(es).tenues.find((x) => x.id === te).nom; }).join(' · ') }); });
-function dessinerDressing(now) {
-  dRaf = requestAnimationFrame(dessinerDressing);
-  const cv = $('dApercu'), r = cv.getBoundingClientRect(), d = Math.min(3, devicePixelRatio || 1), w = Math.round(r.width * d), h = Math.round(r.height * d);
-  if (!w || !h || !Bp) return; if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
-  const pas = Math.min(0.05, Math.max(0.001, (now - dLast) / 1000)); dLast = now; dT += pas;
-  const g = cv.getContext('2d'), m = Bp.m, Sp = h / ((m.ALLONGE + m.TRONC + m.CUISSE + m.JAMBE) * 1.5), R = 3.2, th = 0.28 * Math.sin(dT * 1.5), om = 0.42 * Math.cos(dT * 1.5);
-  g.clearRect(0, 0, w, h);
+clic('dAction', () => agir()); clic('dFermer', () => fermerFiche()); clic('aOui', () => confirmer()); clic('aNon', () => { $('dAchat').hidden = true; achat = null; });
+// Le singe pendu à une liane, dessiné dans un canevas quelconque : la fiche (qui bouge) et les vignettes de la boutique (posées une fois).
+function pendu(g, w, h, Bq, pk, pas, temps, cadre, zoom = 1) {
+  const m = Bq.m, long = m.ALLONGE + m.TRONC + m.CUISSE + m.JAMBE, Sp = Math.min(h / (long * 1.5), w / (long * 1.02)) * zoom, R = 3.2, th = 0.28 * Math.sin(temps * 1.5), om = 0.42 * Math.cos(temps * 1.5);
   Mp.th = th; Mp.om = om; Mp.R = R; Mp.x = R * Math.sin(th); Mp.y = R - R * Math.cos(th); Mp.vx = R * om * Math.cos(th); Mp.vy = R * om * Math.sin(th); Mp.li = { x: 0, y: R, L: R + 3 };
-  const p = poseSinge(Mp, Bp, pas, { ancre: [0, R], reste: 3, devant: 99, attend: false, tend: true });
+  const p = poseSinge(Mp, Bq, pas, { ancre: [0, R], reste: 3, devant: 99, attend: false, tend: true });
   // Le cadre suit lentement le milieu du corps : un singe qui se tient en retrait de la liane (le colobe) reste dans l'image, et le balancement se voit encore.
-  const milieu = (p.sx + p.hx) / 2; dCx = dCx === null ? milieu : dCx + (milieu - dCx) * Math.min(1, pas * 1.2);
-  const Xp = (x) => w * 0.5 + (x - dCx) * Sp, Yp = (y) => h * 0.13 - y * Sp;
+  const milieu = (p.sx + p.hx) / 2; cadre.x = cadre.x === null ? milieu : cadre.x + (milieu - cadre.x) * Math.min(1, pas * 1.2);
+  if (!g) return;
+  const Xp = (x) => w * 0.5 + (x - cadre.x) * Sp, Yp = (y) => h * (0.13 - (zoom - 1) * 0.2) - y * Sp;
+  g.clearRect(0, 0, w, h);
   g.strokeStyle = 'rgba(11,42,46,.95)'; g.lineWidth = Math.max(2, Sp * 0.07); g.lineCap = 'round'; g.beginPath(); g.moveTo(Xp(0), Yp(R)); g.lineTo(Xp(p.px), Yp(p.py)); g.lineTo(Xp(p.px + Math.sin(p.bas) * 3), Yp(p.py - Math.cos(p.bas) * 3)); g.stroke();
-  if (peauVue && peauVue.pret) dessinerPeau(g, p, peauVue, Xp, Yp, Sp); else dessinerSinge(g, p, '#0b1d16', Xp, Yp, Sp);
+  if (pk && pk.pret) dessinerPeau(g, p, pk, Xp, Yp, Sp); else dessinerSinge(g, p, '#0b1d16', Xp, Yp, Sp);
 }
-function ouvrirSkins() {
-  $('sListe').innerHTML = SKINS.map((s) => {
-    const ok = possede(s), choisi = profil.skin === s.id;
-    return `<button class="skin ${ok ? '' : 'non'} ${choisi ? 'choisi' : ''}" data-skin="${s.id}"><i style="background:${s.ink};box-shadow:0 0 0 2px ${s.rim}${s.trail ? ', 0 0 18px rgba(' + s.trail + ',.8)' : ''}"></i><b>${s.nom}</b><span>${choisi ? 'porté' : ok ? 'choisir' : 'à ' + s.seuil}</span></button>`;
-  }).join('');
-  $('skins').classList.add('on');
+const taille = (c) => { const r = c.getBoundingClientRect(), d = Math.min(3, devicePixelRatio || 1), w = Math.round(r.width * d), h = Math.round(r.height * d); if (w && h && (c.width !== w || c.height !== h)) { c.width = w; c.height = h; } return [w, h]; };
+function dessinerFiche(now) {
+  dRaf = requestAnimationFrame(dessinerFiche);
+  const c = $('dApercu'), [w, h] = taille(c); if (!w || !h || !Bp) return;
+  const pas = Math.min(0.05, Math.max(0.001, (now - dLast) / 1000)); dLast = now; dT += pas;
+  pendu(c.getContext('2d'), w, h, Bp, peauVue, pas, dT, cadreFiche);
 }
-$('sListe').addEventListener('click', (e) => { const b = e.target.closest('[data-skin]'); if (!b) return; const s = skinById(b.dataset.skin); if (!possede(s)) return; profil.skin = s.id; garder(); ouvrirSkins(); });
+// Une vignette attend que l'image de la tenue soit chargée, puis se dessine une seule fois (le corps est d'abord laissé pendre une seconde, pour que la queue trouve sa place).
+const vignettes = []; let vRaf = 0;
+function vignette(c, e, x) { vignettes.push({ c, e, pk: sansPeau ? null : peauDe(e, x), essais: 0 }); if (!vRaf) vRaf = requestAnimationFrame(poserVignettes); }
+function poserVignettes() {
+  vRaf = 0;
+  for (let i = vignettes.length - 1; i >= 0; i--) {
+    const v = vignettes[i]; if (!v.c.isConnected) { vignettes.splice(i, 1); continue; }
+    const [w, h] = taille(v.c); if ((v.pk && !v.pk.pret && ++v.essais < 600) || !w || !h) continue;
+    const Bq = corps(morpho(v.e.corps)), cadre = { x: null }; for (let k = 0; k < 90; k++) pendu(null, w, h, Bq, null, 1 / 60, 3.5 + k / 60, cadre);
+    cadre.x = null; pendu(v.c.getContext('2d'), w, h, Bq, v.pk, 1 / 60, 5, cadre, 1.22); vignettes.splice(i, 1);
+  }
+  if (vignettes.length) vRaf = requestAnimationFrame(poserVignettes);
+}
 
 // ---------- Le singe ----------
 // Son corps est dans singe.js. Ici on lui dit seulement ce qui l'entoure : la liane qu'il tient, celle qui vient, une feuille sous lui.
@@ -357,7 +488,9 @@ function faisceau(x, a, w) {
 
 function frame() {
   requestAnimationFrame(frame);
-  const tn = performance.now() / 1000, brut = tn - last, real = Math.min(0.05, brut); last = tn; time += real;
+  const tn = performance.now() / 1000, brut = tn - last, real = Math.min(0.05, brut); last = tn;
+  if (gel && !unTour) return;                            // un panneau couvre la forêt : on ne la redessine pas
+  unTour = false; time += real;
   const paused = window.LIANE.pause;
   // Le mouvement avance du temps réellement écoulé, découpé en pas courts : l'image suit le doigt sans à-coup.
   if (!paused) {
@@ -381,14 +514,14 @@ function frame() {
   const dt = paused ? 0 : real, skin = skinById(profil.skin);
   if (M.mort && !mortT) mortT = time;
   if (mortT && phase === 'course' && time - mortT > 0.7) finir();
-  if (mortT && phase === 'accueil' && time - mortT > 1.2) scene((Math.random() * 1e9) | 0, false);
+  if (mortT && phase === 'accueil' && time - mortT > 1.2) scene(hasard(), false);
   if (phase === 'course') {
     // Le premier geste engage le duel : la mise est notée tout de suite. Quitter ou recharger la page en cours de duel compte comme une défaite.
     if (!parti && !M.idle) { parti = true; $('hLui').textContent = rival.nom + ' · ' + Math.round(G.dist) + ' m'; if (classe) { profil.enCours = { rival: rival.id, elo: rival.elo }; garder(); } }
-    const d = Math.max(0, Math.round(M.x)); if (d !== distVue) { distVue = d; $('chrono').textContent = d + ' m'; }
+    const d = Math.max(0, Math.round(M.x)); if (d !== distVue) { distVue = d; $('chrono').textContent = d; }
     majCrans(M.chaine); majPouvoir(); if (pouvoirT && time - pouvoirT > 1.8) { taire(); pouvoirT = 0; }
-    if (!depasse && Math.round(M.x) > Math.round(G.dist)) { depasse = true; $('ecart').textContent = rival.nom + ' dépassé'; $('ecart').className = 'maj on avance'; ecartT = time; }
-    if (ecartT > 0 && time - ecartT > 2.4) { $('ecart').className = 'maj'; ecartT = -9; }
+    if (!depasse && Math.round(M.x) > Math.round(G.dist)) { depasse = true; $('ecart').textContent = rival.nom + ' dépassé'; $('ecart').className = 'bulle on avance'; ecartT = time; }
+    if (ecartT > 0 && time - ecartT > 2.4) { $('ecart').className = 'bulle'; ecartT = -9; }
     const dn = M.x - jeu.nuit.x, txt = !M.idle && dn < 22 ? 'la nuit · ' + Math.max(0, Math.round(dn)) + ' m' : '';
     if (txt !== nuitVue) { nuitVue = txt; if (txt) $('nuit').textContent = txt; $('nuit').classList.toggle('on', !!txt); }
   }
@@ -514,18 +647,21 @@ function frame() {
   ctx.globalAlpha = 1;
   ctx.drawImage(D.vig, 0, 0, W, H);
 
-  // En course : une ligne fine en haut de l'écran, de ton départ jusqu'au repère du rival.
+  // En course : la ligne du haut, de ton départ jusqu'au repère du rival. Les deux points avancent dessus.
   if (phase === 'course') {
-    const x0 = W * 0.3, x1 = W * 0.7, y = Math.round(9 * dpr), fin = Math.max(60, G.dist), p = (v) => x0 + (x1 - x0) * clamp(v / fin, 0, 1);
-    ctx.strokeStyle = 'rgba(255,246,220,0.35)'; ctx.lineWidth = dpr; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.moveTo(x1, y - 4 * dpr); ctx.lineTo(x1, y + 4 * dpr); ctx.stroke();
-    if (!Mg.fini) { ctx.strokeStyle = 'rgba(255,246,220,0.85)'; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.arc(p(Mg.x || 0), y, 3.5 * dpr, 0, TAU); ctx.stroke(); }
-    ctx.fillStyle = skin.trail ? `rgb(${skin.trail})` : '#fff6dc'; ctx.beginPath(); ctx.arc(p(M.x), y, 3.5 * dpr, 0, TAU); ctx.fill();
+    const fin = Math.max(60, G.dist), pm = Math.round(clamp(M.x / fin, 0, 1) * 400) / 4, pl = Mg.fini ? 100 : Math.round(clamp((Mg.x || 0) / fin, 0, 1) * 400) / 4;
+    if (pm !== pisteMoi) { pisteMoi = pm; $('hpMoi').style.left = pm + '%'; }
+    if (pl !== pisteLui) { pisteLui = pl; $('hpLui').style.left = pl + '%'; }
   }
 }
 
 addEventListener('resize', resize); resize();
 $('version').textContent = VERSION;
-window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get image() { return { dpr, qualite, fluide }; }, get cadre() { return { x: X(M.x) / W, y: Y(M.y) / H, large: W / S, portrait }; }, profil, CFG, lancer, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
+// Les dessins de l'interface : dégradés des emblèmes, icônes des onglets et des boutons.
+document.body.insertAdjacentHTML('afterbegin', DEFS);
+{ const noms = { jouer: 'Jouer', singes: 'Singes', boutique: 'Boutique', rangs: 'Classement' }; for (const b of $('onglets').children) b.innerHTML = ICONE[b.dataset.onglet] + '<span>' + noms[b.dataset.onglet] + '</span>'; }
+$('mPrec').innerHTML = ICONE.retour; $('mSuiv').innerHTML = ICONE.fleche; $('dFermer').innerHTML = ICONE.croix; $('pouvoir').firstElementChild.innerHTML = ICONE.eclair;
+window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get image() { return { dpr, qualite, fluide }; }, get cadre() { return { x: X(M.x) / W, y: Y(M.y) / H, large: W / S, portrait }; }, profil, CFG, lancer, defier, onglet, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
 journal('page ouverte');
 // Un duel classé était engagé quand la page a été quittée ou rechargée : il compte comme une défaite.
 let abandon = 0;

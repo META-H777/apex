@@ -1,7 +1,7 @@
 // LIANE — les rivaux, le classement Elo, les rangs et les skins.
 // Un duel : même forêt pour les deux, celui qui va le plus loin gagne.
 // Tant qu'il n'y a pas de serveur, les rivaux sont simulés : chacun a son niveau, court vraiment le parcours, et laisse un fantôme.
-import { Jeu, rnd, pilote, MONDES } from './jeu.js?v=22';
+import { Jeu, rnd, pilote, MONDES } from './jeu.js?v=23';
 
 export const PARCOURS = [11, 23, 37, 41, 58, 64, 79, 86];   // les parcours du prototype : chaque numéro donne toujours la même forêt
 
@@ -18,7 +18,7 @@ export const skinById = (id) => SKINS.find((s) => s.id === id) || SKINS[0];
 
 // ---------- Les rangs ----------
 export const RANGS = [[0, 'Bronze'], [950, 'Argent'], [1100, 'Or'], [1250, 'Platine'], [1400, 'Diamant'], [1500, 'Maître']];
-export function rang(elo) { let r = RANGS[0], n = null; for (const x of RANGS) { if (elo >= x[0]) r = x; else { n = x; break; } } return { nom: r[1], bas: r[0], suivant: n }; }
+export function rang(elo) { let r = RANGS[0], n = null; for (const x of RANGS) { if (elo >= x[0]) r = x; else { n = x; break; } } return { nom: r[1], bas: r[0], suivant: n, i: RANGS.indexOf(r) }; }
 
 // ---------- Les rivaux simulés ----------
 const NOMS = ['Ara', 'Toucan', 'Jaguar', 'Morpho', 'Tapir', 'Ocelot', 'Caïman', 'Colibri', 'Harpie', 'Tamarin', 'Ouistiti', 'Saki', 'Hoazin', 'Coati', 'Paca', 'Tatou', 'Margay', 'Agouti', 'Piranha', 'Boa', 'Iguane', 'Capucin', 'Atèle', 'Hurleur', 'Quetzal', 'Urubu', 'Kinkajou', 'Anaconda', 'Dendrobate', 'Kapok', 'Tayra', 'Puma', 'Ibis', 'Lamantin', 'Sapajou', 'Motmot', 'Païche', 'Cabiaï', 'Tangara', 'Uakari'];
@@ -59,11 +59,11 @@ export function etat(g, t, out) {
 
 // ---------- Le profil du joueur, gardé sur l'appareil ----------
 const CLE = 'liane-profil-2';
-export const profil = { elo: 800, singe: 'araignee', tenues: {}, dressing: { possede: [], numeros: {}, intentions: [], v: 2 }, skin: 'ombre', v: 0, d: 0, record: 0, records: {}, monde: 0, acquis: ['ombre'], enCours: null };   // on démarre bas, face à des rivaux à sa portée, et on grimpe
+export const profil = { elo: 800, singe: 'araignee', tenues: {}, dressing: { possede: [], numeros: {}, intentions: [], v: 2 }, skin: 'ombre', v: 0, d: 0, serie: 0, record: 0, records: {}, monde: 0, acquis: ['ombre'], enCours: null };   // on démarre bas, face à des rivaux à sa portée, et on grimpe
 try { Object.assign(profil, JSON.parse(localStorage.getItem(CLE) || '{}')); } catch (e) { /* stockage indisponible : la partie ne sera pas gardée */ }
 // Un profil abîmé ne doit jamais bloquer le jeu : on remet d'aplomb ce qui n'a pas la bonne forme.
 if (!Number.isFinite(profil.elo)) profil.elo = 800; profil.elo = Math.round(profil.elo);
-for (const k of ['v', 'd', 'record', 'monde']) if (!Number.isFinite(profil[k])) profil[k] = 0;
+for (const k of ['v', 'd', 'serie', 'record', 'monde']) if (!Number.isFinite(profil[k])) profil[k] = 0;
 if (!profil.records || typeof profil.records !== 'object') profil.records = {};
 if (!Array.isArray(profil.acquis)) profil.acquis = ['ombre'];
 if (typeof profil.singe !== 'string') profil.singe = 'araignee';
