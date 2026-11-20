@@ -52,6 +52,14 @@
   #ecart { position:absolute; left:0; right:0; top:calc(var(--st) + 25vh); text-align:center; font-size:min(3.6vw, 6vh, 22px); opacity:0; transition:opacity .35s; }
   #ecart.on { opacity:1; } #ecart.avance { color:#d8f7c4; } #ecart.retard { color:#ffc9a8; }
   /* Les crans d'élan : un point s'allume à chaque lâcher dans l'arc doré. */
+  /* Le pouvoir du singe : un bouton rond, à part du geste de jeu. L'anneau se remplit ; plein, il s'allume. */
+  #pouvoir { position:absolute; right:calc(var(--sr) + 4vw); bottom:calc(var(--sb) + 16vh); width:min(15vw, 26vh, 84px); padding:0; border:0; background:none; color:inherit; font:inherit; pointer-events:auto; touch-action:none; display:flex; flex-direction:column; align-items:center; gap:6px; opacity:.55; transition:opacity .3s, transform .3s; }
+  #pouvoir i { display:block; width:72%; aspect-ratio:1; border-radius:50%; background:radial-gradient(closest-side, rgba(3,22,26,.78) 72%, transparent 74%), conic-gradient(#ffd98a calc(var(--c, 0) * 360deg), rgba(255,246,220,.2) 0); }
+  #pouvoir span { font-size:min(1.9vw, 9px); letter-spacing:.14em; text-align:center; line-height:1.3; }
+  #pouvoir.pret { opacity:1; animation:pouls 1.1s ease-in-out infinite; }
+  #pouvoir.pret i { background:radial-gradient(closest-side, #ffe9b0 30%, rgba(255,214,120,.55) 72%, transparent 74%), conic-gradient(#ffd98a 360deg, #ffd98a 0); box-shadow:0 0 22px rgba(255,214,120,.8); }
+  #pouvoir.servi { opacity:0; pointer-events:none; }
+  @keyframes pouls { 50% { transform:scale(1.09); } }
   #crans { position:absolute; left:calc(var(--sl) + 5vw + 2px); top:calc(var(--st) + 7vh + min(5.2vw, 8.5vh, 34px) * 1.35); display:flex; gap:9px; }
   #crans i { width:7px; height:7px; border-radius:50%; box-shadow:0 0 0 1px rgba(255,246,220,.5); transition:background .25s, box-shadow .25s; }
   #crans i.on { background:#ffd98a; box-shadow:0 0 10px rgba(255,214,120,.9); }
@@ -94,9 +102,11 @@
   @media (orientation:portrait) {
     #gListe { grid-template-columns:repeat(2, 1fr); gap:3vw; }
     .singe { padding:1.4vh 2.5vw 1.6vh; } .singe img { height:17vh; }
+    #pouvoir { width:19vw; bottom:calc(var(--sb) + 17vh); right:calc(var(--sr) + 6vw); } #pouvoir span { font-size:2.5vw; }
     .singe b { font-size:3.3vw; } .singe small { font-size:2.7vw; } .singe li { font-size:2.6vw; } .singe li i { width:6px; height:6px; } .singe p { font-size:2.6vw; } .singe .etat { font-size:2.5vw; }
   }
-  @media (orientation:landscape) and (max-height:480px) { .singe p { display:none; } .singe img { height:24vh; } }
+  .singe p.pv em { font-style:normal; color:#ffdc96; }
+  @media (orientation:landscape) and (max-height:480px) { .singe p:not(.pv) { display:none; } .singe img { height:20vh; } .singe ul { margin-top:0; } }
   #sListe { display:grid; grid-template-columns:repeat(6, 1fr); gap:2.2vw; width:min(100%, 760px); margin-top:3vh; }
   @media (orientation:portrait) { #sListe { grid-template-columns:repeat(3, 1fr); gap:5vw; } }
   /* Téléphone tenu debout : le jeu est une bande au milieu ; les textes prennent la place libre au-dessus et en dessous, en plus gros. */
@@ -149,6 +159,7 @@
   <div id="crans"><i></i><i></i><i></i></div>
   <div id="ecart" class="maj"></div>
   <div id="nuit" class="maj"></div>
+  <button id="pouvoir" data-ui aria-label="pouvoir du singe"><i></i><span class="maj" id="pNom"></span></button>
 </div>
 
 <div id="fin" class="ecran" data-ui>
@@ -186,6 +197,6 @@
 <div id="note" class="txt maj ombre vu"></div>
 <div id="version"></div>
 <div id="chargement" class="maj">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=15"></script>
+<script type="module" src="main.js?v=18"></script>
 </body>
 </html>

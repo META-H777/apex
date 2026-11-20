@@ -29,6 +29,7 @@ export const CFG = {
   repos: 0.6,            // délai avant de pouvoir resaisir la liane qu'on vient de lâcher
   nuitDepart: 30,        // la nuit part de cette distance derrière le singe
   nuitRecul: 34,         // et ne se laisse jamais distancer de plus
+  charge: 12,            // le pouvoir du singe est chargé après autant de points : 1 par liane saisie, 2 de plus par lâcher dans l'arc doré
 };
 
 export function rnd(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -117,8 +118,15 @@ export function pas(m, lianas, dt, ev) {
     pose(m);
     if (m.want && (!m.depart || m.th >= 0.6)) lacher(m, ev);             // sur la toute première liane, un lâcher trop tôt attend le bon moment
   } else {
+    if (m.tir) {                                                         // un pouvoir le ramène vers une liane : il y est en un quart de seconde, puis il la saisit
+      const T = m.tir; T.t += dt; m.air += dt; const k = Math.min(1, T.t / T.d), q = k * k * (3 - 2 * k);
+      m.x = T.x0 + (T.li.x - T.x0) * q; m.y = T.y0 + (T.y1 - T.y0) * q;
+      if (k >= 1) { m.tir = null; m.vx = 7; m.vy = 0; m.last = null; saisir(m, T.li, ev); }
+      return;
+    }
     m.air += dt;
-    m.vy -= C.g * e.vol * dt;
+    if (m.plane > 0) { m.plane -= dt; m.vy += (3 - m.vy) * Math.min(1, 7 * dt); m.vx = Math.max(m.vx, 9.5); }   // la cape ouverte : il ne tombe plus, il plane vers l'avant
+    else m.vy -= C.g * e.vol * dt;
     const sp = Math.hypot(m.vx, m.vy), k = 1 - C.drag * sp * dt; m.vx *= k; m.vy *= k;
     m.x += m.vx * dt; m.y += m.vy * dt;
     // Un tremplin : une grande feuille tendue au-dessus des cimes. Le singe qui tombe dessus rebondit, d'autant plus haut qu'il arrive vite.
@@ -172,7 +180,7 @@ export class Jeu {
     this.r = rnd(seed); this.d = monde; this.lianas = []; this.id = 0; this.time = 0; this.events = []; this.impasses = 0; this.durs = 0;
     this.file = []; this.prochain = 70 + monde.passage[0] * (0.3 + 0.5 * this.r());       // le premier passage dur n'arrive pas tout de suite
     const li = this.liane(0, 13, 2.4);
-    this.M = { mode: 'swing', li, R: 7, th: -0.55, om: 0, x: 0, y: 0, vx: 0, vy: 0, hold: false, idle: true, depart: false, want: false, air: 0, last: null, chaine: 0, parfaits: 0, saisies: 0, mort: null, arc: null, e };
+    this.M = { mode: 'swing', li, R: 7, th: -0.55, om: 0, x: 0, y: 0, vx: 0, vy: 0, hold: false, idle: true, depart: false, want: false, air: 0, last: null, chaine: 0, parfaits: 0, saisies: 0, mort: null, arc: null, e, tir: null, plane: 0, sauve: false };
     pose(this.M);
     // Deux éclaireurs parcourent la forêt à mesure qu'elle pousse : l'un sans élan, l'autre en flux. Une liane n'est gardée que si les deux passent.
     this.eclaireurs = [0, CFG.crans].map((c) => ({ ...this.M, e: BASE, idle: false, depart: true, chaine: c, cran: c }));
@@ -223,6 +231,25 @@ export class Jeu {
       const m = { ...e, li, R: Math.min(6.5, li.L - 0.5), th: -0.25, mode: 'swing', idle: false, depart: false, want: false, chaine: e.cran, arc: null };   // éclaireur perdu : on le repose sur la liane
       m.om = Math.sqrt(2 * cible(m.R, m.chaine)) / m.R * 0.9; pose(m); return m;
     });
+  }
+
+  // Le pouvoir du singe : une fois par partie, quand il est chargé, il rattrape un saut manqué. Il ne sert qu'en vol.
+  get charge() { const M = this.M; return M.sauve || !M.e.pouvoir ? 0 : Math.min(1, (M.saisies + 2 * M.parfaits) / CFG.charge); }
+  pouvoir() {
+    const M = this.M, type = M.e.pouvoir; if (!type || M.sauve || M.mort || M.mode !== 'fly' || M.tir || this.charge < 1) return false;
+    let li = null;
+    if (type === 'queue') {                                              // sa queue attrape la liane la plus proche, plutôt devant lui
+      let best = 1e9; for (const l of this.lianas) { const dx = l.x - M.x; if (dx < -3 || dx > 8) continue; const c = Math.abs(dx - 1.5); if (c < best) { best = c; li = l; } }
+      if (!li) return false;
+    } else if (type === 'ami') {                                         // un des siens descend de la canopée et lui tend une liane, juste devant lui
+      const x = M.x + 1.6; li = { id: this.id++, x, y: 14, L: 12.4, a: 0, av: 0, ph: 0, seed: 1, ami: true };
+      let i = this.lianas.findIndex((l) => l.x > x); if (i < 0) i = this.lianas.length; this.lianas.splice(i, 0, li);
+    }
+    if (li) M.tir = { li, t: 0, d: 0.26, x0: M.x, y0: M.y, y1: clamp(M.y + 0.6, li.y - li.L + 0.8, li.y - (li.ami ? 5.2 : CFG.minR + 0.3)) };   // sous le singe ami, qui tient le haut de la liane
+    else if (type === 'cape') M.plane = 1.7;                             // sa cape s'ouvre : il plane
+    else if (type === 'ricochet') { M.vy = 15.5; M.vx = Math.max(M.vx, 10.5); M.air = 0; }   // il rebondit sur une brindille
+    M.sauve = true; this.events.push({ type: 'pouvoir', nom: type, x: M.x, y: M.y, li });
+    return true;
   }
 
   setHold(h) {

@@ -9,7 +9,7 @@
 //  - Le saut : corps à l'horizontale, ventre vers le bas, les deux bras tendus devant, les jambes derrière, la queue dans le prolongement.
 //  - À la saisie, la main arrive la première ; le corps, lancé, passe dessous comme un poids ; la queue vient reprendre la liane.
 //  - Proportions mesurées sur les films : bras (main comprise) 1,35 fois le tronc, jambe 1 fois, queue 1,5 fois, tronc épais, petite tête ronde.
-import { CFG } from './jeu.js?v=15';
+import { CFG } from './jeu.js?v=18';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k, TAU = Math.PI * 2;
 const lisse = (k) => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
@@ -21,7 +21,7 @@ export const K = 1.4;                                      // le singe est dessi
 // Sans argument : le singe-araignée, mesuré sur les films (bras 1,35 fois le tronc, jambe 1 fois, queue 1,5 fois).
 export function morpho(c = {}) {
   const k = c.K ?? K, m = { K: k, TRONC: (c.tronc ?? 0.66) * k, BRAS: (c.bras ?? 0.37) * k, AVANT: (c.avant ?? 0.36) * k, MAIN: (c.main ?? 0.2) * k,
-    CUISSE: (c.cuisse ?? 0.33) * k, JAMBE: (c.jambe ?? 0.32) * k, PIED: (c.pied ?? 0.17) * k, TETE: (c.tete ?? 0.108) * k };
+    CUISSE: (c.cuisse ?? 0.33) * k, JAMBE: (c.jambe ?? 0.32) * k, PIED: (c.pied ?? 0.17) * k, TETE: (c.tete ?? 0.108) * k, style: c.style || 'atele' };
   m.PRISE = m.AVANT + m.MAIN * 0.85; m.ALLONGE = m.BRAS + m.PRISE;      // du coude, puis de l'épaule, au creux des doigts
   const q = c.queue ?? 1.18; m.QN = q > 0 ? 17 : 1; m.QSEG = q * k / 16;   // la queue ; un gibbon n'en a pas
   // Au départ il attend perché sur une branche, la liane en main : la branche est à cette distance sous ses mains.
@@ -34,7 +34,7 @@ export const PERCHE = ATELE.PERCHE;
 export function corps(m = ATELE) {
   return { m, mode: null, tS: 9, tA: 9, alt: 1, bras: 0, brasV: 0, tronc: -0.4, troncV: 0, flex: 0.4, flexV: 0,
     cuisse: [0.9, 1.1], cuisseV: [0, 0], genou: [1.8, 1.9], genouV: [0, 0], h2: [0.2, 0.5], regard: 0, pret: 0, pas: 0, haut: -0.5,
-    ax: 0, ay: 0, pvx: 0, pvy: 0, pv: false, bas: 0, qtient: 0, mains: 1, squash: 0, queue: null, qbx: 0, qby: 0, ox: 0, oy: 0, rx: null, ry: 0, qui: 1, ech: 1 };
+    ax: 0, ay: 0, pvx: 0, pvy: 0, pv: false, bas: 0, qtient: 0, mains: 1, squash: 0, queue: null, qbx: 0, qby: 0, ox: 0, oy: 0, rx: null, ry: 0, qui: 1, ech: 1, accro: 0 };
 }
 
 // Coude ou genou : le point milieu d'un membre à deux os entre a et b ; renvoie aussi le bout réellement atteint.
@@ -49,6 +49,9 @@ function joint(ax, ay, bx, by, l1, l2, side) {
 //       tend : le doigt est posé, il tend les bras ; attend : avant le premier geste ; tremplin : une feuille est sous lui.
 export function poseSinge(M, B, dt, env = {}) {
   const sw = M.mode === 'swing', C = CFG, { K, TRONC, BRAS, AVANT, MAIN, CUISSE, JAMBE, PIED, TETE, PRISE, ALLONGE, QN, QSEG, PERCHE } = B.m;
+  // Le geste de l'espèce. atele : suspendu par un bras, couché. gibbon : droit sous le bras, jambes repliées. colobe : accroupi sur la liane,
+  // saut bras et jambes ouverts. tamarin : collé à la liane, bond tout étiré. Les deux derniers posent mains et pieds sur la liane.
+  const st = B.m.style, gib = st === 'gibbon', col = st === 'colobe', tam = st === 'tamarin', accroche = col || tam;
   if (B.mode !== M.mode) { if (B.mode) { if (sw) { B.tS = 0; B.alt = -B.alt; } else { B.tA = 0; if (B.mode === 'swing') { B.qui = 1 - B.qui; B.ech = 0; } } } B.mode = M.mode; }
   const n = Math.max(1, Math.ceil(dt * 120 - 1e-6)), h = dt / n;
   // La pesanteur ressentie par le corps : la vraie, moins l'accélération des mains. Sur la liane elle tire dans l'axe de la corde ; en vol elle est nulle.
@@ -73,30 +76,52 @@ export function poseSinge(M, B, dt, env = {}) {
     // la faire saisir et lâcher à chaque liane lui faisait faire un tour complet, comme une hélice.
     const veutQueue = false;                              // elle ne saisit plus la liane : Romain la veut presque immobile
     B.qtient += ((veutQueue ? 1 : 0) - B.qtient) * Math.min(1, h * (veutQueue ? 4 : 6));
-    B.mains += (((attend || traine) ? 1 : 0) - B.mains) * Math.min(1, h * 9);
+    B.mains += (((attend || traine || (accroche && sw)) ? 1 : 0) - B.mains) * Math.min(1, h * 9);
+    B.accro += (((accroche && sw && !attend) ? 1 : 0) - B.accro) * Math.min(1, h * (sw ? 8 : 16));
     // La direction de la queue, dans le monde : derrière lui, un peu relevée. Elle suit lentement, sans épouser les à-coups du tronc.
     // Elle ne bouge presque pas : un dixième de ce qu'elle faisait (demande de Romain du 20/11).
     const cQ = attend ? -0.5 : -1.85 + 0.3 * (sw ? M.th * 0.25 - 0.1 : 0.1 + 0.4 * pente);
     B.haut += ecart(cQ, B.haut) * Math.min(1, h * 3);
     // --- Le bras qui tient, de la main à l'épaule. Sur la liane il prolonge la corde, tendu. En vol il est pointé vers l'avant.
-    const cBras = attend ? 0.06 : sw ? M.th : -1.34 + 0.45 * pente + 0.08 * approche;
-    let acc = -(G / 0.75) * Math.sin(ecart(B.bras, aplomb)) * 1.2 + ecart(cBras, B.bras) * (sw ? 45 : 200) - B.brasV * (sw ? 8 : 24);
+    let cBras = attend ? 0.06 : sw ? M.th : -1.34 + 0.45 * pente + 0.08 * approche;
+    if (!attend) {
+      if (gib && !sw) cBras = -0.78 + 0.3 * pente + 0.12 * approche;             // en vol, il tend le bras vers le haut, devant lui
+      else if (col) cBras = sw ? M.th - 0.42 + 0.3 * B.pret : -1.02 + 0.35 * pente;
+      else if (tam) cBras = sw ? M.th - 0.2 : -1.46 + 0.45 * pente;
+    }
+    const tenu = accroche && sw ? 3 : 1;                                             // un singe accroupi sur la liane tient sa pose à la force des bras
+    let acc = -(G / 0.75) * Math.sin(ecart(B.bras, aplomb)) * 1.2 + ecart(cBras, B.bras) * (sw ? 45 * tenu : 200) - B.brasV * (sw ? 8 * Math.sqrt(tenu) : 24);
     B.brasV += acc * h; B.bras += B.brasV * h;
     // --- Le tronc, de l'épaule à l'arrière-train. Suspendu : couché en arrière, porté par la queue. En vol : à l'horizontale, dans le sens de la course.
-    const cTronc = attend ? -0.42 : sw ? M.th - lerp(1.1, 1.0, B.pret) + 0.3 * B.mains : -1.4 + 0.5 * pente + 0.22 * approche;
+    let cTronc = attend ? -0.42 : sw ? M.th - lerp(1.1, 1.0, B.pret) + 0.3 * B.mains : -1.4 + 0.5 * pente + 0.22 * approche;
+    if (!attend) {
+      if (gib) cTronc = sw ? M.th * 0.6 - 0.1 - 0.18 * B.pret : -0.45 + 0.35 * pente + 0.1 * approche;      // droit sous l'épaule ; en vol, à peine penché
+      else if (col) cTronc = sw ? M.th - 0.3 - 0.25 * B.pret : -0.8 + 0.3 * pente;
+      else if (tam) cTronc = sw ? M.th - 0.1 : -1.5 + 0.5 * pente + 0.15 * approche;
+    }
     acc = -(G / 0.9) * Math.sin(ecart(B.tronc, aplomb)) * (sw ? 0.28 : 0.5) + ecart(cTronc, B.tronc) * (sw ? 60 : 160) - B.troncV * (sw ? 11 : 21) + (sw ? ecart(B.bras, M.th) * 14 : 0);
     B.troncV += acc * h; B.tronc += B.troncV * h;
     // --- Le coude : tendu sous la charge, à peine plié en fin de balancement ; plié quand il attend, perché.
-    const cFlex = attend ? 0.5 : sw ? 0.015 + 0.04 * B.pret + 0.1 * B.mains : 0.03;
+    let cFlex = attend ? 0.5 : sw ? 0.015 + 0.04 * B.pret + 0.1 * B.mains : 0.03;
+    if (!attend) {
+      if (gib) cFlex = sw ? 0.03 + 0.28 * B.pret : 0.05;                           // il se hisse d'un coup de bras avant de lâcher
+      else if (col) cFlex = sw ? 0.42 - 0.3 * B.pret : 0.08;
+      else if (tam) cFlex = sw ? 0.72 + 0.1 * Math.sin(B.pas * 2.4) : 0.05;
+    }
     B.flexV += ((cFlex - B.flex) * 140 - B.flexV * 20) * h; B.flex += B.flexV * h;
     // --- Les jambes (angle de la cuisse dans le monde). Suspendu : elles pendent, pliées, molles, et pédalent un peu.
     //     Avant le lâcher elles partent en arrière ; en vol elles traînent derrière le corps, puis reviennent dessous à l'approche.
     for (let j = 0; j < 2; j++) {
       const d = (j ? 1 : -1) * B.alt, ped = Math.sin(B.pas + j * Math.PI); let cC, cG;
       if (attend) { cC = 0.9 + d * 0.1; cG = 1.9; }
+      else if (sw && gib) { cC = lerp(1.2, 0.75, B.pret) + M.th * 0.2 + d * 0.12 + ped * 0.06; cG = lerp(2.05, 1.5, B.pret); }
+      else if (sw && accroche) { cC = 0.95 + d * 0.1; cG = tam ? 2.2 : 1.9; }
       else if (sw) { cC = lerp(0.42, -0.2, B.pret) + M.th * 0.35 + ped * 0.24 + d * 0.1; cG = lerp(1.25, 0.8, B.pret) - ped * 0.3 + d * 0.1; }
       else {
         cC = lerp(d > 0 ? -1.22 : -0.78, d > 0 ? -0.7 : -0.25, approche) + 0.45 * pente; cG = lerp(d > 0 ? 0.4 : 0.95, d > 0 ? 0.7 : 1.1, approche) + ped * 0.06;
+        if (gib) { cC = 1.05 + d * 0.15 + 0.2 * pente - 0.25 * approche; cG = 1.95 - 0.5 * approche; }          // jambes repliées contre le ventre
+        else if (col) { cC = (d > 0 ? 1.0 : 0.5) + 0.25 * pente + 0.15 * approche; cG = 0.4 + 0.3 * approche; }   // jambes ouvertes vers l'avant, prêtes à recevoir
+        else if (tam) { const k = approche * approche; cC = lerp(d > 0 ? -1.5 : -1.36, 0.4, k) + 0.45 * pente; cG = lerp(0.12, 1.3, k); }   // étiré comme un écureuil
         if (env.tremplin) { cC = 0.25 + d * 0.12; cG = 0.5; }                      // il tend les pieds vers la feuille
         if (B.squash > 0.02) { cC = lerp(cC, 0.95, B.squash); cG = lerp(cG, 2.0, B.squash); }
       }
@@ -132,11 +157,11 @@ export function poseSinge(M, B, dt, env = {}) {
   // En vol, il est tendu devant, un peu sous le premier. Il est suivi par rapport à l'épaule, pour ne jamais sauter d'une image à l'autre.
   let c2;
   if (sw) {
-    const pend = dir(0.55 + M.th * 0.4 + Math.sin(B.pas * 0.7) * 0.08), l = ALLONGE * 0.86, bH = clamp(M.th * 0.5 + 0.35, 0.2, 0.8);
+    const pend = dir(0.55 + M.th * 0.4 + Math.sin(B.pas * 0.7) * 0.08), l = ALLONGE * 0.86, bH = gib ? clamp(M.th * 0.5 + 0.95, 0.7, 1.35) : clamp(M.th * 0.5 + 0.35, 0.2, 0.8);
     const libre = [lerp(pend[0] * l, Math.cos(bH) * ALLONGE * 0.97, lisse(B.pret)), lerp(pend[1] * l, Math.sin(bH) * ALLONGE * 0.97, lisse(B.pret))], k = lisse(B.mains);
     c2 = [lerp(libre[0], px + ux * 0.26 * K - sx, k), lerp(libre[1], py + uy * 0.26 * K - sy, k)];
-  } else { const a = -0.1 + 0.45 * pente + 0.2 * approche, l = ALLONGE * (0.94 + 0.04 * approche); c2 = [Math.cos(a) * l, Math.sin(a) * l]; }   // déjà pointé vers l'avant : c'est lui qui mène
-  { const k = dt > 0 ? Math.min(1, dt * (sw ? 16 : 20)) : 0; B.h2[0] += (c2[0] - B.h2[0]) * k; B.h2[1] += (c2[1] - B.h2[1]) * k; }
+  } else { const a = gib ? lerp(0.9, lerp(-2.05, 0.1, approche * approche), lisse((B.tA - 0.1) / 0.3)) + 0.3 * pente : col ? -0.6 + 0.4 * pente : tam ? -0.02 + 0.45 * pente : -0.1 + 0.45 * pente + 0.2 * approche, l = ALLONGE * (0.94 + 0.04 * approche); c2 = [Math.cos(a) * l, Math.sin(a) * l]; }   // déjà pointé vers l'avant : c'est lui qui mène
+  { const k = dt > 0 ? Math.min(1, dt * (sw ? 16 : gib ? 9 : 20)) : 0; B.h2[0] += (c2[0] - B.h2[0]) * k; B.h2[1] += (c2[1] - B.h2[1]) * k; }
   // Il change de main à chaque liane, comme un vrai singe qui brachie : au lâcher, la main qui tenait devient la main libre et l'autre,
   // déjà tendue devant, devient celle qui saisira. Les deux bras échangent leur place en un cinquième de seconde, pendant le vol.
   // bras[0] est le bras de devant (côté spectateur), bras[1] celui du fond ; B.qui dit lequel tient, ou va saisir.
@@ -156,6 +181,11 @@ export function poseSinge(M, B, dt, env = {}) {
     const a = B.cuisse[j], t = dir(a); let kx = jx + t[0] * CUISSE, ky = jy + t[1] * CUISSE; const u = dir(a - B.genou[j]); let fx = kx + u[0] * JAMBE, fy = ky + u[1] * JAMBE;
     let ap = a - B.genou[j] + 1.1;                                                 // le pied : long, relâché, la pointe vers l'avant
     if (attend) { const q = joint(jx, jy, M.x + (j ? 0.24 : -0.02) * K, M.y - PERCHE, CUISSE, JAMBE, 1); kx = q[0]; ky = q[1]; fx = q[2]; fy = q[3]; ap = 1.5; }
+    else if (B.accro > 0.01) {                                                     // accroupi : les pieds sont posés sur la liane, sous les mains
+      const bas = (hx - px) * dBas[0] + (hy - py) * dBas[1], c = sur(Math.max(0.3 * K, bas + (col ? 0.2 : 0.04) * K + (j ? 0.13 : -0.02) * K));
+      const q = joint(jx, jy, c[0], c[1], CUISSE, JAMBE, 1), w = lisse(B.accro);
+      kx = lerp(kx, q[0], w); ky = lerp(ky, q[1], w); fx = lerp(fx, q[2], w); fy = lerp(fy, q[3], w); ap = lerp(ap, B.bas + 1.25, w);
+    }
     const p = dir(ap); legs.push([kx, ky, fx, fy, fx + p[0] * PIED, fy + p[1] * PIED]);
   }
   // La tête : ronde, portée devant l'épaule, dans le prolongement du dos. Elle reste presque fixe et regarde là où il va.
