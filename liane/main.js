@@ -1,15 +1,15 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des tenues.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js, les dessins de l'interface dans ui.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=23';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=23';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=23';
-import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=23';
-import { chargerPeau, dessinerPeau } from './peau.js?v=23';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=23';
-import { embleme, ICONE, DEFS, compter } from './ui.js?v=23';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=24';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=24';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=24';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=24';
+import { chargerPeau, dessinerPeau } from './peau.js?v=24';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=24';
+import { embleme, ICONE, DEFS, compter } from './ui.js?v=24';
 
-const VERSION = 'v0.11';
+const VERSION = 'v0.12';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -45,12 +45,12 @@ let phase = 'accueil';                 // accueil, course ou fin
 let parcours = PARCOURS[0], rival = null, G = null, Bg = null, t = 0, mortT = 0, depasse = false, ecartT = -9;
 let classe = false, parti = false, aLever = false, appuiFrais = false;     // duel classé ou non ; premier geste fait ; un lever de doigt en attente du prochain pas
 let accueilT = -9, aide = 9, arcVu = null, arcT = 0, cransVus = -1, distVue = -1, nuitVue = '', fluide = 0.016, mesureT = 0;
-let lancement = false, vsPret = false, vsFin = 0, conseil = '', ongletVu = 'jouer', segVu = 'route', pisteMoi = -1, pisteLui = -1;
+let attendVu = false, lancement = false, vsPret = false, vsFin = 0, conseil = '', ongletVu = 'jouer', segVu = 'route', pisteMoi = -1, pisteLui = -1;
 const Mg = {}, Ma = {}, trail = [], rings = [], perche = { x: 0, y: 0 };
 let Ba = null, chargeVue = -1, pouvoirT = 0, dRaf = 0, dT = 0, dLast = 0, Bp = null;
 const X = (x) => (x - camX) * S + W * vue, Y = (y) => baseY - y * S + camDy;
 const hasard = () => (Math.random() * 1e9) | 0;
-function scene(seed, nuit) { jeu = new Jeu(seed, nuit, monde, esp.regles); M = jeu.M; B = corps(morpho(esp.corps)); perche.x = M.x; perche.y = M.y - B.m.PERCHE; pil = { gout: 0.9 }; camX = M.x + 3; camLead = 3; trail.length = 0; rings.length = 0; mortT = 0; arcVu = null; unTour = true; }
+function scene(seed, nuit) { jeu = new Jeu(seed, nuit, monde, esp.regles); jeu.aides = true; M = jeu.M; B = corps(morpho(esp.corps)); perche.x = M.x; perche.y = M.y - B.m.PERCHE; pil = { gout: 0.9 }; camX = M.x + 3; camLead = 3; trail.length = 0; rings.length = 0; mortT = 0; arcVu = null; unTour = true; }
 const dire = (txt) => { $('note').textContent = txt; $('note').classList.remove('vu'); };
 const taire = () => $('note').classList.add('vu');
 // Le bouton du pouvoir : un anneau qui se remplit, s'allume quand le pouvoir est chargé, et disparaît une fois qu'il a servi.
@@ -61,12 +61,26 @@ function majPouvoir() {
 function pouvoir(source) { if (phase !== 'course' || window.LIANE.pause || vsPret) return; if (jeu.pouvoir()) journal('pouvoir ' + esp.pouvoir.id + ' : ' + source); }
 function majCrans(n) { if (n === cransVus) return; cransVus = n; const el = $('crans').children; for (let i = 0; i < el.length; i++) el[i].classList.toggle('on', i < n); }
 
+// ---------- Le téléphone : vibrations, écran qui reste allumé, plein écran, installation ----------
+const tactile = matchMedia('(pointer: coarse)').matches, ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const installee = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
+// Une vibration brève sous le doigt (les téléphones Android ; l'iPhone ne le permet pas à une page web).
+const vibre = (m) => { try { if (tactile && navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(m); } catch (e) { /* rien */ } };
+// Pendant une course, l'écran ne se met pas en veille.
+let verrou = null;
+async function eveil(on) { try { if (on && 'wakeLock' in navigator && !verrou) { verrou = await navigator.wakeLock.request('screen'); verrou.addEventListener('release', () => { verrou = null; }); } else if (!on && verrou) { const v = verrou; verrou = null; await v.release(); } } catch (e) { verrou = null; } }
+// Sur Android, la partie passe en plein écran dès qu'on touche Jouer. Sur iPhone, le plein écran vient de l'installation sur l'écran d'accueil.
+function pleinEcran() { try { const el = document.documentElement; if (tactile && !installee && !document.fullscreenElement && el.requestFullscreen) el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); } catch (e) { /* rien */ } }
+let invite = null;
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); invite = e; majInstaller(); });
+function majInstaller() { $('bInstaller').hidden = installee || !tactile || !!profil.sansInstall || !(invite || ios); }
+
 // ---------- L'accueil ----------
 // La part du chemin faite vers le rang suivant, de 0 à 1. Le bronze est compté à partir de 700 : c'est là que jouent les rivaux les plus faibles.
 function avance(elo) { const r = rang(elo); if (!r.suivant) return 1; const bas = r.i ? r.bas : 700; return clamp((elo - bas) / (r.suivant[0] - bas), 0.04, 1); }
 const suite = (elo) => { const r = rang(elo); return r.suivant ? r.suivant[1] + ' dans ' + (r.suivant[0] - elo) + ' pts' : 'rang le plus haut'; };
 const ordinal = (n) => n + (n === 1 ? 'er' : 'e');
-const visage = (e) => `singes/${e.id}-portrait.png?v=23`;
+const visage = (e) => `singes/${e.id}-portrait.png?v=24`;
 function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
   $('aEmb').innerHTML = embleme(r.i, 46); $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom; $('aBarre').style.width = avance(profil.elo) * 100 + '%'; $('aSuite').textContent = suite(profil.elo);
@@ -77,6 +91,7 @@ function majAccueil() {
   $('mPoints').innerHTML = MONDES.map((m, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
   const tn = tenueDe(esp); $('aSingeImg').src = visage(esp); $('aSingeNom').textContent = esp.nom; $('aSingeTenue').textContent = tn.id === 'naturel' ? 'ton singe' : tn.nom;
   $('aMise').textContent = monde.essai ? 'entraînement · hors classement' : 'duel classé · ' + monde.nom;
+  majInstaller();
 }
 function changerMonde(pas) {
   if (phase !== 'accueil' || lancement) return; accueilT = time;
@@ -98,7 +113,7 @@ function onglet(nom, seg) {
 }
 function accueil() {
   if (lancement) return;
-  doigts.clear(); phase = 'accueil'; accueilT = time; scene(hasard(), false); journal('accueil');
+  doigts.clear(); phase = 'accueil'; eveil(false); accueilT = time; scene(hasard(), false); journal('accueil');
   $('fin').classList.remove('pret'); for (const id of ['fin', 'hud', 'duel']) $(id).classList.remove('on');
   $('onglets').classList.remove('cache'); taire(); onglet('jouer');
 }
@@ -108,7 +123,7 @@ function accueil() {
 function defier(source) {
   if (lancement || (phase !== 'accueil' && phase !== 'fin')) return;
   if (auto) { lancer(false, source); return; }
-  lancement = true; vsPret = false; fermerFiche();
+  pleinEcran(); lancement = true; vsPret = false; fermerFiche();
   parcours = PARCOURS[(Math.random() * PARCOURS.length) | 0]; rival = adversaire(profil.elo, rival);
   const cl = !monde.essai, rm = rang(profil.elo), rl = rang(rival.elo), tr = skinById(rival.skin).trail;
   $('vTitre').textContent = (cl ? 'duel classé' : 'entraînement') + ' · ' + (monde.essai ? 'tremplins' : monde.nom);
@@ -128,7 +143,7 @@ function lancer(rejouer, source = 'code', choisi = false) {
   if (!rejouer && !choisi) { parcours = PARCOURS[(Math.random() * PARCOURS.length) | 0]; rival = adversaire(profil.elo, rival); }
   classe = !rejouer && !auto && !monde.essai; parti = false; gel = false;
   G = fantome(parcours, rival, monde); Bg = corps(); scene(parcours, true);
-  phase = 'course'; t = 0; depasse = false; ecartT = -9; distVue = -1; nuitVue = ''; pisteMoi = pisteLui = -1; majCrans(0); chargeVue = -2; pouvoirT = 0; $('pNom').textContent = esp.pouvoir.nom; majPouvoir();
+  eveil(true); phase = 'course'; t = 0; depasse = false; ecartT = -9; distVue = -1; nuitVue = ''; pisteMoi = pisteLui = -1; majCrans(0); chargeVue = -2; pouvoirT = 0; $('pNom').textContent = esp.pouvoir.nom; majPouvoir();
   aide = profil.v + profil.d < 3 ? 0 : 9;                // les premières parties, le jeu dit quoi faire, liane après liane
   for (const id of ['accueil', 'fin', ...PANNEAUX]) $(id).classList.remove('on'); fermerFiche();
   $('onglets').classList.add('cache'); $('hud').classList.toggle('on', !choisi); $('chrono').textContent = '0'; $('ecart').className = 'bulle'; $('nuit').classList.remove('on');
@@ -142,7 +157,7 @@ function finir() {
   if (classe) { profil.elo = Math.max(100, profil.elo + d); if (gagne) { profil.v++; profil.serie = (profil.serie | 0) + 1; } else { profil.d++; profil.serie = 0; } profil.enCours = null; }
   profil.records = profil.records || {}; const rec = dist > (profil.records[monde.id] || 0); if (rec) profil.records[monde.id] = dist;
   profil.record = Math.max(profil.record || 0, dist);
-  garder(); phase = 'fin'; taire(); journal('fin : ' + (M.mort === 'nuit' ? 'nuit' : 'chute') + ' à ' + dist + ' m');
+  garder(); phase = 'fin'; eveil(false); vibre(gagne ? [14, 70, 14, 70, 40] : 30); taire(); journal('fin : ' + (M.mort === 'nuit' ? 'nuit' : 'chute') + ' à ' + dist + ' m');
   const skin = acquerir().pop(), rB = rang(profil.elo); if (skin) garder();
   const tenue = classe ? ESPECES.flatMap((e) => e.tenues.filter((x) => x.elo && avant < x.elo && profil.elo >= x.elo && aTenue(e, x)).map((x) => x.nom))[0] : null;
   $('fTitre').textContent = gagne ? 'Victoire' : 'Défaite'; $('fin').classList.toggle('perdu', !gagne);
@@ -188,7 +203,7 @@ const leve = (e) => { doigts.delete(e.pointerId); if (!doigts.size) hold(false);
 addEventListener('pointerup', leve);
 addEventListener('pointercancel', (e) => { journal('doigt annulé par le système'); leve(e); });
 addEventListener('blur', () => { doigts.clear(); hold(false); });
-document.addEventListener('visibilitychange', () => journal(document.hidden ? 'page masquée' : 'page affichée'));
+document.addEventListener('visibilitychange', () => { journal(document.hidden ? 'page masquée' : 'page affichée'); if (!document.hidden && phase === 'course') eveil(true); });
 addEventListener('contextmenu', (e) => e.preventDefault());
 addEventListener('keydown', (e) => {
   if (e.code === 'Escape') { if (!$('dAchat').hidden) { $('dAchat').hidden = true; achat = null; } else fermerFiche(); return; }
@@ -203,6 +218,8 @@ addEventListener('keydown', (e) => { if (!e.repeat && (e.code === 'KeyX' || e.co
 $('pouvoir').addEventListener('pointerdown', (e) => { e.preventDefault(); pouvoir('bouton'); });
 const clic = (id, fn) => $(id).addEventListener('click', (e) => { e.stopPropagation(); fn(e); });
 const pret = () => $('fin').classList.contains('pret');
+clic('iOui', () => { if (invite) { const i = invite; invite = null; i.prompt(); i.userChoice.then(() => majInstaller(), () => majInstaller()); } else $('installe').hidden = false; });
+clic('iNon', () => { profil.sansInstall = true; garder(); majInstaller(); }); clic('iFermer', () => { $('installe').hidden = true; });
 clic('bJouer', () => { if (time - accueilT > 0.3) defier('bouton jouer'); }); clic('duel', () => fermerVs());
 clic('bSuivant', () => { if (pret()) defier('bouton duel suivant'); }); clic('bRevanche', () => { if (pret()) lancer(true, 'bouton rejouer'); }); clic('bAccueil', () => { if (pret()) accueil(); });
 clic('mPrec', () => changerMonde(-1)); clic('mSuiv', () => changerMonde(1));
@@ -415,7 +432,10 @@ function drawPerche() {
 
 // ---------- Les lianes ----------
 function drawLianas(pose) {
-  const al = ALLURE[monde.id] || ALLURE.canopee, lis = Math.max(1.5, S * 0.035);
+  const al = ALLURE[monde.id] || ALLURE.canopee, lis = Math.max(1.5, S * 0.035), ep = Math.max(S * al.ep * (portrait ? 1.5 : 1.15), 2 * dpr);   // sur téléphone, une liane ne doit jamais être un fil
+  // La liane à atteindre : la prochaine devant le singe. Un liseré de lumière la détache, et la partie que ses mains peuvent saisir luit doucement.
+  let vise = null;
+  if (phase === 'course' && !M.mort) { const x0 = M.mode === 'swing' ? M.li.x + 0.5 : M.x - CFG.portee2; for (const li of jeu.lianas) { if (li.x < x0 || (li === M.last && M.air < CFG.repos)) continue; vise = li; break; } }
   ctx.strokeStyle = ctx.fillStyle = PAL.ink; ctx.lineCap = 'round';
   for (const li of jeu.lianas) {
     const ax = X(li.x); if (ax < -S * 12 || ax > W + S * 12) continue;
@@ -425,14 +445,18 @@ function drawLianas(pose) {
       li.ta = pose.bas;                                   // le bout libre pend sous les mains, en retard : c'est le corps du singe qui en tient le compte
       ex = hx + Math.sin(li.ta) * rem * S; ey = hy + Math.cos(li.ta) * rem * S;
       const pli = Math.exp(-pose.saisi * 15) * 0.9;        // juste après la saisie, la liane pendait encore droit : elle se tend en un instant, sous le poids
-      ctx.lineWidth = S * al.ep; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + hx) / 2 + (ax - hx) / 2 * pli, (ay + hy) / 2, hx, hy); ctx.quadraticCurveTo(hx + Math.sin(li.ta) * rem * S * 0.5, hy + Math.cos(li.ta) * rem * S * 0.5, ex, ey); ctx.stroke();
+      ctx.lineWidth = ep; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + hx) / 2 + (ax - hx) / 2 * pli, (ay + hy) / 2, hx, hy); ctx.quadraticCurveTo(hx + Math.sin(li.ta) * rem * S * 0.5, hy + Math.cos(li.ta) * rem * S * 0.5, ex, ey); ctx.stroke();
       cx = (ax + hx) / 2; cy = (ay + hy) / 2;
     } else {                  // libre : elle se balance et se courbe selon son élan
       li.ta = undefined;
       ex = ax + Math.sin(li.a) * li.L * S; ey = ay + Math.cos(li.a) * li.L * S;
       cx = (ax + ex) / 2 - Math.cos(li.a) * li.av * li.L * S * 0.07; cy = (ay + ey) / 2;
-      if (li.dur) { ctx.strokeStyle = PAL.rim; ctx.lineWidth = S * al.ep; ctx.beginPath(); ctx.moveTo(ax + lis, ay - lis); ctx.quadraticCurveTo(cx + lis, cy - lis, ex + lis, ey - lis); ctx.stroke(); ctx.strokeStyle = PAL.ink; }   // un liseré de lumière la détache du fond
-      ctx.lineWidth = S * al.ep; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(cx, cy, ex, ey); ctx.stroke();
+      if (li === vise) {      // la partie saisissable, de sous l'accroche jusqu'au bout : une lueur
+        const t0 = Math.min(0.9, CFG.minR / li.L), u = 1 - t0, sx = u * u * ax + 2 * u * t0 * cx + t0 * t0 * ex, sy = u * u * ay + 2 * u * t0 * cy + t0 * t0 * ey;
+        ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = `rgba(${PAL.glow},0.2)`; ctx.lineWidth = ep * 3.4; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo(cx + (ex - cx) * t0, cy + (ey - cy) * t0, ex, ey); ctx.stroke(); ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = PAL.ink;
+      }
+      if (li.dur || li === vise) { ctx.strokeStyle = PAL.rim; ctx.lineWidth = ep; ctx.beginPath(); ctx.moveTo(ax + lis, ay - lis); ctx.quadraticCurveTo(cx + lis, cy - lis, ex + lis, ey - lis); ctx.stroke(); ctx.strokeStyle = PAL.ink; }   // un liseré de lumière la détache du fond
+      ctx.lineWidth = ep; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(cx, cy, ex, ey); ctx.stroke();
     }
     ctx.beginPath();          // quelques feuilles le long de la liane
     for (let i = 0; i < al.feuilles; i++) {
@@ -461,14 +485,21 @@ function drawTremplins(dt) {
     ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.45; ctx.drawImage(D.dot, x - w * 1.1, y - h * 3.2, w * 2.2, h * 5); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
   }
 }
-// L'arc doré : la portion du balancement où il faut lâcher. Il s'éclaire quand les mains y passent.
+// La zone sûre (pâle) : tous les lâchers qui mènent à la liane suivante. L'arc doré, dedans : ceux qui donnent de l'élan. Il s'éclaire quand les mains y passent.
+// Sans zone ni arc, aucun lâcher ne passe à ce balancement : il faut rester accroché, le singe reprend de l'élan.
 function drawArc() {
-  if (M.mode !== 'swing' || !M.arc || M.mort || M.idle) { arcVu = null; return; }
-  if (M.arc !== arcVu) { arcVu = M.arc; arcT = time; }
-  const a = M.arc, k = clamp((time - arcT) / 0.14, 0, 1), dedans = M.om > 0 && M.th >= a[0] && M.th <= a[1], ax = X(M.li.x), ay = Y(M.li.y), r = M.R * S;
-  ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
-  ctx.strokeStyle = `rgba(255,190,90,${(dedans ? 0.3 : 0.16) * k})`; ctx.lineWidth = S * 0.6; ctx.beginPath(); ctx.arc(ax, ay, r, Math.PI / 2 - a[1], Math.PI / 2 - a[0]); ctx.stroke();
-  ctx.strokeStyle = `rgba(255,232,170,${(dedans ? 1 : 0.72) * k})`; ctx.lineWidth = S * 0.16; ctx.beginPath(); ctx.arc(ax, ay, r, Math.PI / 2 - a[1], Math.PI / 2 - a[0]); ctx.stroke();
+  if (M.mode !== 'swing' || (!M.arc && !M.zone) || M.mort || M.idle) { arcVu = null; return; }
+  if (!arcVu) arcT = time; arcVu = M.arc || M.zone;
+  const k = clamp((time - arcT) / 0.14, 0, 1), ax = X(M.li.x), ay = Y(M.li.y), r = M.R * S, fin = Math.max(S * 0.16, 2.6 * dpr);
+  ctx.lineCap = 'round';
+  // La zone sûre : un trait clair bordé de sombre, pour se lire aussi bien sur le ciel que sur les feuillages.
+  if (M.zone) { const z = M.zone, dans = M.om > 0 && M.th >= z[0] && M.th <= z[1], trace = () => { ctx.beginPath(); ctx.arc(ax, ay, r, Math.PI / 2 - z[1], Math.PI / 2 - z[0]); ctx.stroke(); };
+    ctx.strokeStyle = `rgba(4,30,34,${0.3 * k})`; ctx.lineWidth = fin * 1.9; trace(); ctx.strokeStyle = `rgba(255,250,232,${(dans ? 0.95 : 0.7) * k})`; ctx.lineWidth = fin * 0.75; trace(); }
+  ctx.globalCompositeOperation = 'lighter';
+  if (M.arc) { const a = M.arc, dedans = M.om > 0 && M.th >= a[0] && M.th <= a[1];
+    ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = `rgba(214,140,40,${0.9 * k})`; ctx.lineWidth = fin * 2.1; ctx.beginPath(); ctx.arc(ax, ay, r, Math.PI / 2 - a[1], Math.PI / 2 - a[0]); ctx.stroke(); ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `rgba(255,190,90,${(dedans ? 0.3 : 0.16) * k})`; ctx.lineWidth = fin * 3.8; ctx.beginPath(); ctx.arc(ax, ay, r, Math.PI / 2 - a[1], Math.PI / 2 - a[0]); ctx.stroke();
+    ctx.strokeStyle = `rgba(255,232,170,${(dedans ? 1 : 0.72) * k})`; ctx.lineWidth = fin * 1.15; ctx.beginPath(); ctx.arc(ax, ay, r, Math.PI / 2 - a[1], Math.PI / 2 - a[0]); ctx.stroke(); }
   ctx.globalCompositeOperation = 'source-over';
 }
 
@@ -504,11 +535,11 @@ function frame() {
     }
   }
   for (const e of jeu.events) {
-    if (e.type === 'saisie') { burst(e.x, e.y + 1.5, 2, -1); if (aide < 9 && phase === 'course') { if (M.saisies >= 3) { aide = 9; taire(); } else dire('lâche dans l\'arc doré'); } }
-    else if (e.type === 'lacher') { if (e.parfait) rings.push({ x: e.x, y: e.y, t: 0 }); if (aide < 9 && phase === 'course') dire('tiens pour attraper la liane'); }
+    if (e.type === 'saisie') { burst(e.x, e.y + 1.5, 2, -1); if (phase === 'course') vibre(6); if (aide < 9 && phase === 'course') { if (M.saisies >= 3) { aide = 9; taire(); } else dire('lâche dans l\'arc doré'); } }
+    else if (e.type === 'lacher') { if (e.parfait) { rings.push({ x: e.x, y: e.y, t: 0 }); if (phase === 'course') vibre(12); } if (aide < 9 && phase === 'course') dire('tiens pour attraper la liane'); }
     else if (e.type === 'rebond') { e.tr.ecrase = 1; burst(e.x, e.y + 0.4, 6, 5); B.squash = 1; }
     else if (e.type === 'mort') { if (e.cause === 'chute') burst(e.x, 0.5, 14, 6); taire(); }
-    else if (e.type === 'pouvoir') { rings.push({ x: e.x, y: e.y, t: 0 }, { x: e.x + 0.5, y: e.y + 0.5, t: 0 }); burst(e.x, e.y, 10, 4); dire(esp.pouvoir.nom); pouvoirT = time; }
+    else if (e.type === 'pouvoir') { vibre(30); rings.push({ x: e.x, y: e.y, t: 0 }, { x: e.x + 0.5, y: e.y + 0.5, t: 0 }); burst(e.x, e.y, 10, 4); dire(esp.pouvoir.nom); pouvoirT = time; }
   }
   jeu.events.length = 0;
   const dt = paused ? 0 : real, skin = skinById(profil.skin);
@@ -520,6 +551,9 @@ function frame() {
     if (!parti && !M.idle) { parti = true; $('hLui').textContent = rival.nom + ' · ' + Math.round(G.dist) + ' m'; if (classe) { profil.enCours = { rival: rival.id, elo: rival.elo }; garder(); } }
     const d = Math.max(0, Math.round(M.x)); if (d !== distVue) { distVue = d; $('chrono').textContent = d; }
     majCrans(M.chaine); majPouvoir(); if (pouvoirT && time - pouvoirT > 1.8) { taire(); pouvoirT = 0; }
+    // Aucun lâcher ne passe à ce balancement : le jeu le dit, tant que c'est vrai.
+    const attends = M.mode === 'swing' && !M.idle && !M.depart && M.om > 0.2 && M.th > -0.2 && !M.arc && !M.zone && !jeu.aZone;
+    if (attends !== attendVu) { attendVu = attends; if (attends) dire('reste accroché : il reprend de l\'élan'); else if (aide >= 9 && !pouvoirT) taire(); }
     if (!depasse && Math.round(M.x) > Math.round(G.dist)) { depasse = true; $('ecart').textContent = rival.nom + ' dépassé'; $('ecart').className = 'bulle on avance'; ecartT = time; }
     if (ecartT > 0 && time - ecartT > 2.4) { $('ecart').className = 'bulle'; ecartT = -9; }
     const dn = M.x - jeu.nuit.x, txt = !M.idle && dn < 22 ? 'la nuit · ' + Math.max(0, Math.round(dn)) + ' m' : '';
@@ -660,7 +694,7 @@ $('version').textContent = VERSION;
 // Les dessins de l'interface : dégradés des emblèmes, icônes des onglets et des boutons.
 document.body.insertAdjacentHTML('afterbegin', DEFS);
 { const noms = { jouer: 'Jouer', singes: 'Singes', boutique: 'Boutique', rangs: 'Classement' }; for (const b of $('onglets').children) b.innerHTML = ICONE[b.dataset.onglet] + '<span>' + noms[b.dataset.onglet] + '</span>'; }
-$('mPrec').innerHTML = ICONE.retour; $('mSuiv').innerHTML = ICONE.fleche; $('dFermer').innerHTML = ICONE.croix; $('pouvoir').firstElementChild.innerHTML = ICONE.eclair;
+$('iNon').innerHTML = ICONE.croix; $('mPrec').innerHTML = ICONE.retour; $('mSuiv').innerHTML = ICONE.fleche; $('dFermer').innerHTML = ICONE.croix; $('pouvoir').firstElementChild.innerHTML = ICONE.eclair;
 window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get image() { return { dpr, qualite, fluide }; }, get cadre() { return { x: X(M.x) / W, y: Y(M.y) / H, large: W / S, portrait }; }, profil, CFG, lancer, defier, onglet, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
 journal('page ouverte');
 // Un duel classé était engagé quand la page a été quittée ou rechargée : il compte comme une défaite.

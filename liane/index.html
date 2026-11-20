@@ -5,7 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="LIANE">
 <meta name="theme-color" content="#041c1f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icone-180.png">
+<link rel="icon" type="image/png" href="icone-192.png">
 <title>LIANE</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,8 +19,8 @@
   :root { --fond:#041c1f; --creme:#fff6dc; --doux:rgba(255,246,220,.66); --pale:rgba(255,246,220,.42); --or:#ffd98a; --or2:#f3ae4a; --encre:#1d1503;
           --carte:rgba(5,30,34,.78); --carte2:rgba(255,246,220,.06); --trait:rgba(255,246,220,.13); --vert:#a8ecb0; --rouge:#ffb199; --bar:62px; --doux-mvt:cubic-bezier(.2,.8,.2,1);
           --sl:env(safe-area-inset-left, 0px); --sr:env(safe-area-inset-right, 0px); --st:env(safe-area-inset-top, 0px); --sb:env(safe-area-inset-bottom, 0px); }
-  html, body { margin:0; height:100%; background:var(--fond); overflow:hidden; }
-  body { touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent;
+  html, body { margin:0; height:100%; background:var(--fond); overflow:hidden; overscroll-behavior:none; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+  body { position:fixed; inset:0; touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent;
          font-family:'Jost', system-ui, sans-serif; font-weight:400; font-size:15px; color:var(--creme); font-variant-numeric:tabular-nums; -webkit-font-smoothing:antialiased; }
   #ecran { position:fixed; inset:0; width:100%; height:100%; display:block; }
   button { font:inherit; color:inherit; background:none; border:0; padding:0; margin:0; cursor:pointer; -webkit-tap-highlight-color:transparent; }
@@ -65,6 +70,10 @@
   .mondes .duo { flex:1; align-items:center; text-align:center; }
   #mPoints { display:flex; gap:4px; margin-top:4px; } #mPoints i { width:5px; height:5px; border-radius:50%; background:rgba(255,246,220,.25); } #mPoints i.on { background:var(--or); width:14px; border-radius:5px; }
   #bJouer { grid-column:1 / -1; }
+  #bInstaller { grid-column:1 / -1; display:flex; align-items:center; height:44px; border-radius:14px; } #bInstaller[hidden] { display:none; }
+  #iOui { flex:1; height:100%; padding:0 14px; text-align:left; font-size:12.5px; color:var(--doux); } #iOui b { color:var(--or); font-weight:500; }
+  #iNon { width:44px; height:100%; display:grid; place-items:center; color:var(--pale); } #iNon svg { width:16px; height:16px; }
+  #installe ol { margin:0; padding:0 0 0 20px; text-align:left; font-size:14px; line-height:1.6; color:var(--creme); align-self:stretch; } #installe b { font-size:18px; font-weight:600; }
 
   /* ---------- Les onglets ---------- */
   #onglets { position:fixed; z-index:8; left:calc(var(--sl) + 12px); right:calc(var(--sr) + 12px); bottom:calc(var(--sb) + 10px); height:var(--bar); max-width:520px; margin:0 auto; display:grid; grid-template-columns:repeat(4, 1fr);
@@ -201,12 +210,12 @@
   .fInfo h3 { font-size:26px; font-weight:600; line-height:1.1; } #dSinge { font-size:13px; color:var(--doux); } #dTexte { font-size:13.5px; line-height:1.45; color:var(--doux); }
   .fInfo .cta { width:100%; height:56px; margin-top:8px; } .fInfo .cta b { font-size:16px; letter-spacing:.12em; text-indent:.12em; }
   .fInfo > small { align-self:center; font-size:11px; color:var(--pale); text-align:center; }
-  #dAchat { position:fixed; inset:0; z-index:12; display:flex; align-items:flex-end; justify-content:center; background:rgba(2,12,16,.72); } #dAchat[hidden] { display:none; }
-  #dAchat .feuille { width:min(100%, 480px); box-sizing:border-box; padding:22px 20px calc(var(--sb) + 20px); border-radius:26px 26px 0 0; background:#0a2a30; border:1px solid var(--trait); border-bottom:0; display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; animation:monte .3s var(--doux-mvt); }
+  .voile { position:fixed; inset:0; z-index:12; display:flex; align-items:flex-end; justify-content:center; background:rgba(2,12,16,.72); } .voile[hidden] { display:none; }
+  .voile .feuille { width:min(100%, 480px); box-sizing:border-box; padding:22px 20px calc(var(--sb) + 20px); border-radius:26px 26px 0 0; background:#0a2a30; border:1px solid var(--trait); border-bottom:0; display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; animation:monte .3s var(--doux-mvt); }
   @keyframes monte { from { transform:translateY(40px); opacity:0; } }
-  #aTitre { font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--doux); } #aPrix { font-size:40px; font-weight:600; color:var(--or); line-height:1.1; } #dAchat p { font-size:13px; line-height:1.45; color:var(--doux); }
-  #dAchat p.essai { padding:10px 12px; border-radius:14px; background:rgba(255,246,220,.07); font-size:12px; }
-  #dAchat .cta { width:100%; height:54px; margin-top:6px; } #dAchat .cta b { font-size:15px; letter-spacing:.12em; text-indent:.12em; } #aNon { height:40px; font-size:12.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--doux); }
+  #aTitre { font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--doux); } #aPrix { font-size:40px; font-weight:600; color:var(--or); line-height:1.1; } .voile p { font-size:13px; line-height:1.45; color:var(--doux); }
+  .voile p.essai { padding:10px 12px; border-radius:14px; background:rgba(255,246,220,.07); font-size:12px; }
+  .voile .cta { width:100%; height:54px; margin-top:6px; } .voile .cta b { font-size:15px; letter-spacing:.12em; text-indent:.12em; } #aNon, #iFermer { height:40px; font-size:12.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--doux); }
 
   /* Le classement et les rangs */
   .moiCarte { margin-top:16px; padding:16px; display:grid; grid-template-columns:auto 1fr; gap:6px 14px; align-items:center; border-radius:24px; background:var(--carte2); border:1px solid var(--trait); }
@@ -249,7 +258,7 @@
     #rangs::after { height:calc(var(--sb) + 24px); } #cListe li.moi { bottom:calc(var(--sb) + 10px); }
     #sListe { grid-template-columns:repeat(6, 1fr); } .grille { grid-template-columns:repeat(4, 1fr); }
     #fiche { flex-direction:row; } .fInfo { width:min(44%, 420px); margin:0; border-radius:26px 0 0 26px; justify-content:center; padding:20px calc(var(--sr) + 22px) 20px 24px; box-sizing:border-box; }
-    #dAchat { align-items:center; } #dAchat .feuille { border-radius:26px; border-bottom:1px solid var(--trait); padding-bottom:20px; }
+    .voile { align-items:center; } .voile .feuille { border-radius:26px; border-bottom:1px solid var(--trait); padding-bottom:20px; }
   }
   @media (orientation:landscape) and (max-height:520px) {
     #chrono { font-size:34px; } #crans { top:calc(var(--st) + 54px); }
@@ -275,6 +284,7 @@
   </div>
   <div class="logo ombre"><b>LIANE</b><small>va plus loin que ton rival</small></div>
   <div class="bas">
+    <div class="carte" id="bInstaller" data-ui hidden><button id="iOui"><b>Installer LIANE</b> · plein écran, comme une app</button><button id="iNon" aria-label="ne plus proposer"></button></div>
     <button class="monSinge carte" id="bSinge" data-ui><img id="aSingeImg" alt=""><span class="duo"><small id="aSingeTenue"></small><b id="aSingeNom"></b></span></button>
     <div class="mondes carte" data-ui><button id="mPrec" aria-label="niveau précédent"></button><span class="duo"><small id="mInfo"></small><b id="mNom"></b><span id="mPoints"></span></span><button id="mSuiv" aria-label="niveau suivant"></button></div>
     <button class="cta" id="bJouer" data-ui><b>Jouer</b><small id="aMise"></small></button>
@@ -358,11 +368,20 @@
   </div>
 </div>
 
-<div id="dAchat" data-ui hidden>
+<div id="dAchat" class="voile" data-ui hidden>
   <div class="feuille">
     <span id="aTitre"></span><b id="aPrix"></b><p id="aDetail"></p>
     <p class="essai">Boutique en essai : rien n'est encaissé. Confirmer note ton intention d'achat et te prête la tenue.</p>
     <button class="cta" id="aOui"><b>Confirmer l'essai</b></button><button id="aNon">Annuler</button>
+  </div>
+</div>
+
+<div id="installe" class="voile" data-ui hidden>
+  <div class="feuille">
+    <b>Installer LIANE sur l'iPhone</b>
+    <ol><li>Ouvre cette page dans Safari.</li><li>Touche le bouton Partager (le carré avec une flèche).</li><li>Choisis « Sur l'écran d'accueil ».</li></ol>
+    <p>LIANE s'ouvrira ensuite en plein écran, depuis son icône.</p>
+    <button id="iFermer">Compris</button>
   </div>
 </div>
 
@@ -373,6 +392,6 @@
 <div id="note" class="ombre vu"></div>
 <div id="version"></div>
 <div id="chargement">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=23"></script>
+<script type="module" src="main.js?v=24"></script>
 </body>
 </html>

@@ -1,0 +1,17 @@
+{
+  "name": "LIANE",
+  "short_name": "LIANE",
+  "description": "Va plus loin que ton rival, de liane en liane.",
+  "lang": "fr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#041c1f",
+  "theme_color": "#041c1f",
+  "icons": [
+    { "src": "icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
