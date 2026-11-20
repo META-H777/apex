@@ -1,7 +1,7 @@
 // LIANE — les rivaux, le classement Elo, les rangs et les skins.
 // Un duel : même forêt pour les deux, celui qui va le plus loin gagne.
 // Tant qu'il n'y a pas de serveur, les rivaux sont simulés : chacun a son niveau, court vraiment le parcours, et laisse un fantôme.
-import { Jeu, rnd, pilote, MONDES } from './jeu.js?v=13';
+import { Jeu, rnd, pilote, MONDES } from './jeu.js?v=15';
 
 export const PARCOURS = [11, 23, 37, 41, 58, 64, 79, 86];   // les parcours du prototype : chaque numéro donne toujours la même forêt
 
@@ -59,13 +59,14 @@ export function etat(g, t, out) {
 
 // ---------- Le profil du joueur, gardé sur l'appareil ----------
 const CLE = 'liane-profil-2';
-export const profil = { elo: 800, skin: 'ombre', v: 0, d: 0, record: 0, records: {}, monde: 0, acquis: ['ombre'], enCours: null };   // on démarre bas, face à des rivaux à sa portée, et on grimpe
+export const profil = { elo: 800, singe: 'araignee', skin: 'ombre', v: 0, d: 0, record: 0, records: {}, monde: 0, acquis: ['ombre'], enCours: null };   // on démarre bas, face à des rivaux à sa portée, et on grimpe
 try { Object.assign(profil, JSON.parse(localStorage.getItem(CLE) || '{}')); } catch (e) { /* stockage indisponible : la partie ne sera pas gardée */ }
 // Un profil abîmé ne doit jamais bloquer le jeu : on remet d'aplomb ce qui n'a pas la bonne forme.
 if (!Number.isFinite(profil.elo)) profil.elo = 800; profil.elo = Math.round(profil.elo);
 for (const k of ['v', 'd', 'record', 'monde']) if (!Number.isFinite(profil[k])) profil[k] = 0;
 if (!profil.records || typeof profil.records !== 'object') profil.records = {};
 if (!Array.isArray(profil.acquis)) profil.acquis = ['ombre'];
+if (typeof profil.singe !== 'string') profil.singe = 'araignee';
 export function garder() { try { localStorage.setItem(CLE, JSON.stringify(profil)); } catch (e) { /* rien */ } }
 // Un skin gagné reste gagné, même si l'Elo redescend ensuite.
 export function acquerir() { const neufs = SKINS.filter((s) => s.seuil <= profil.elo && !profil.acquis.includes(s.id)); for (const s of neufs) profil.acquis.push(s.id); return neufs; }

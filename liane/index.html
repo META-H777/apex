@@ -70,7 +70,7 @@
   #bSuivant, #bRevanche { font-size:min(2.8vw, 4vh, 15px); padding:1.8vh 5vw; border:1px solid rgba(255,246,220,.7); border-radius:999px; }
 
   /* Le classement et les skins. */
-  .panneau { background:rgba(3,22,26,.9); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); display:flex; flex-direction:column; align-items:center; padding:calc(var(--st) + 4vh) 6vw calc(var(--sb) + 3vh); box-sizing:border-box; }
+  .panneau { z-index:5; background:rgba(3,22,26,.94); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); display:flex; flex-direction:column; align-items:center; padding:calc(var(--st) + 4vh) 6vw calc(var(--sb) + 3vh); box-sizing:border-box; }
   .panneau.on { pointer-events:auto; }
   .panneau h2 { margin:0 0 2vh; font-weight:300; font-size:min(2.8vw, 4vh, 15px); }
   .panneau .fermer { position:absolute; right:calc(var(--sr) + 4vw); top:calc(var(--st) + 3vh); }
@@ -80,6 +80,23 @@
   #cListe li.moi { background:rgba(255,246,220,.1); border-radius:6px; }
   #cListe .p { width:9%; opacity:.6; } #cListe i { width:9px; height:9px; border-radius:50%; flex:none; box-shadow:0 0 0 1px rgba(255,246,220,.35); }
   #cListe .n { flex:1; text-align:left; } #cListe .r { opacity:.6; font-size:.82em; } #cListe .e { width:16%; text-align:right; }
+  #gListe { display:grid; grid-template-columns:repeat(4, 1fr); gap:1.6vw; width:min(100%, 900px); margin-top:1.5vh; flex:1; min-height:0; overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
+  .singe { display:flex; flex-direction:column; align-items:center; gap:.5vh; padding:1.2vh 1vw 1.4vh; border:1px solid rgba(255,246,220,.16); border-radius:10px; background:rgba(255,246,220,.04); color:inherit; font:inherit; cursor:pointer; min-width:0; }
+  .singe.choisi { border-color:rgba(255,220,150,.85); background:rgba(255,220,150,.1); }
+  .singe img { height:min(26vh, 150px); max-width:100%; object-fit:contain; }
+  .singe b { font-weight:400; letter-spacing:.14em; text-transform:uppercase; font-size:min(1.7vw, 13px); }
+  .singe small { font-size:min(1.4vw, 11px); letter-spacing:.12em; text-transform:uppercase; color:#ffdc96; }
+  .singe ul { list-style:none; margin:.6vh 0 0; padding:0; width:100%; }
+  .singe li { display:flex; justify-content:space-between; align-items:center; font-size:min(1.35vw, 11px); letter-spacing:.08em; text-transform:uppercase; padding:.25vh 0; opacity:.9; }
+  .singe li em { display:flex; gap:3px; } .singe li i { width:7px; height:7px; border-radius:50%; background:rgba(255,246,220,.16); } .singe li i.p { background:#ffdc96; }
+  .singe p { margin:.5vh 0 0; font-size:min(1.3vw, 11px); line-height:1.35; opacity:.7; text-align:center; }
+  .singe .etat { margin-top:auto; padding-top:.6vh; font-size:min(1.3vw, 10px); letter-spacing:.2em; text-transform:uppercase; opacity:.75; }
+  @media (orientation:portrait) {
+    #gListe { grid-template-columns:repeat(2, 1fr); gap:3vw; }
+    .singe { padding:1.4vh 2.5vw 1.6vh; } .singe img { height:17vh; }
+    .singe b { font-size:3.3vw; } .singe small { font-size:2.7vw; } .singe li { font-size:2.6vw; } .singe li i { width:6px; height:6px; } .singe p { font-size:2.6vw; } .singe .etat { font-size:2.5vw; }
+  }
+  @media (orientation:landscape) and (max-height:480px) { .singe p { display:none; } .singe img { height:24vh; } }
   #sListe { display:grid; grid-template-columns:repeat(6, 1fr); gap:2.2vw; width:min(100%, 760px); margin-top:3vh; }
   @media (orientation:portrait) { #sListe { grid-template-columns:repeat(3, 1fr); gap:5vw; } }
   /* Téléphone tenu debout : le jeu est une bande au milieu ; les textes prennent la place libre au-dessus et en dessous, en plus gros. */
@@ -122,7 +139,7 @@
     <div class="mondes maj" data-ui><button id="mPrec" aria-label="niveau précédent">‹</button><b id="mNom"></b><button id="mSuiv" aria-label="niveau suivant">›</button></div>
     <div class="maj" id="mInfo"></div>
   </div>
-  <div class="menu"><button class="lien maj" id="bClassement" data-ui>classement</button><button class="lien maj" id="bSkins" data-ui>skins</button></div>
+  <div class="menu"><button class="lien maj" id="bSinge" data-ui>singe</button><button class="lien maj" id="bClassement" data-ui>classement</button><button class="lien maj" id="bSkins" data-ui>skins</button></div>
   <div class="go maj">touche pour défier un rival</div>
 </div>
 
@@ -151,6 +168,13 @@
   <div class="pied">rivaux simulés · le classement mondial viendra avec le serveur</div>
 </div>
 
+<div id="singes" class="ecran panneau" data-ui>
+  <button class="lien maj fermer" id="gFermer">fermer</button>
+  <h2 class="maj">choisis ton singe</h2>
+  <div id="gListe"></div>
+  <div class="pied">seize points chacun · aucun n'est le meilleur partout</div>
+</div>
+
 <div id="skins" class="ecran panneau" data-ui>
   <button class="lien maj fermer" id="sFermer">fermer</button>
   <h2 class="maj">skins</h2>
@@ -162,6 +186,6 @@
 <div id="note" class="txt maj ombre vu"></div>
 <div id="version"></div>
 <div id="chargement" class="maj">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=13"></script>
+<script type="module" src="main.js?v=15"></script>
 </body>
 </html>

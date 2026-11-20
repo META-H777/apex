@@ -56,7 +56,10 @@ const TREMPLIN = (r, k, f) => ({ dx: 17.5 + r() * 3.5 * f, y: 13 + (r() - 0.5), 
 const MOTIFS_ESSAI = [[TREMPLIN], [TREMPLIN], [SERREE, TREMPLIN], [HAUTE, PLONGEON, TREMPLIN]];
 const MOTIFS = [[HAUTE, PLONGEON], [SAUT], [SERREE, SERREE, SERREE], [MARCHE(0), MARCHE(1), MARCHE(2), PLONGEON], [HAUTE, PLONGEON, HAUTE, PLONGEON], [SAUT, HAUTE, PLONGEON], [SERREE, SAUT]];
 // L'énergie de balancement que le singe entretient sur une corde de longueur R, selon ses crans d'élan.
-const cible = (R, chaine) => CFG.g * R * CFG.amp * (1 + CFG.elan * Math.min(chaine, CFG.crans));
+// Chaque singe a ses réglages (m.e) : voir especes.js. Sans réglages, c'est la règle de base.
+export const BASE = { amp: 1, pump: 1, vol: 1, portee: 1, arc: 1 };
+// amp relève la vitesse sans élan ; la vitesse en flux, elle, est la même pour tous : la forêt est vérifiée entre ces deux bornes, pas au-delà.
+const cible = (R, chaine, e = BASE) => { const haut = 1 + CFG.elan * CFG.crans; return CFG.g * R * CFG.amp * (e.amp + (haut - e.amp) * Math.min(chaine, CFG.crans) / CFG.crans); };
 
 function pose(m) { const li = m.li, s = Math.sin(m.th), c = Math.cos(m.th); m.x = li.x + m.R * s; m.y = li.y - m.R * c; m.vx = m.R * m.om * c; m.vy = m.R * m.om * s; }
 
@@ -71,9 +74,9 @@ function lacher(m, ev) {
 
 // La liane que les mains touchent : sa corde passe à portée, entre son accroche et son bout.
 function saisissable(m, lianas) {
-  let best = null, bestD = 1e9;
+  let best = null, bestD = 1e9; const p = (m.e || BASE).portee;
   for (const li of lianas) {
-    const dx = m.x - li.x; if (dx > CFG.portee2) continue; if (dx < -CFG.portee) break;
+    const dx = m.x - li.x; if (dx > CFG.portee2 * p) continue; if (dx < -CFG.portee * p) break;
     if (li === m.last && m.air < CFG.repos) continue;
     if (m.y > li.y - CFG.minR || m.y < li.y - li.L - 0.3) continue;      // trop près de l'accroche, ou sous le bout de la liane
     if (Math.abs(dx) < bestD) { bestD = Math.abs(dx); best = li; }
@@ -93,14 +96,14 @@ function saisir(m, li, ev) {
 
 // Un pas du mouvement. Sert au jeu, aux fantômes et aux essais du pilote : la même règle pour tous.
 export function pas(m, lianas, dt, ev) {
-  const C = CFG;
+  const C = CFG, e = m.e || BASE;
   if (m.mode === 'swing') {
     if (m.idle) { m.om = 0; pose(m); return; }                           // avant le premier geste : il attend, accroché
     m.om += -(C.g / m.R) * Math.sin(m.th) * dt;
     const v = m.R * m.om, E = 0.5 * v * v + C.g * m.R * (1 - Math.cos(m.th));   // l'énergie du balancement, comptée depuis son creux
     if (m.om > 0) {
-      const Et = cible(m.R, m.chaine);
-      if (E < Et) { if (m.th < 1) m.om += C.pump / m.R * dt; }          // il se tracte vers l'avant, jusqu'à retrouver sa vitesse
+      const Et = cible(m.R, m.chaine, e);
+      if (E < Et) { if (m.th < 1) m.om += C.pump * e.pump / m.R * dt; }          // il se tracte vers l'avant, jusqu'à retrouver sa vitesse
       else if (E > Et + 4) { const v2 = Math.max(0, v * v - 2 * C.fuite * (E - Et) * dt); m.om = Math.sqrt(v2) / m.R; }
       if (m.th > C.bout) m.om -= m.om * Math.min(1, 30 * dt);            // au bout du balancement, il ne monte plus
     } else {
@@ -115,7 +118,7 @@ export function pas(m, lianas, dt, ev) {
     if (m.want && (!m.depart || m.th >= 0.6)) lacher(m, ev);             // sur la toute première liane, un lâcher trop tôt attend le bon moment
   } else {
     m.air += dt;
-    m.vy -= C.g * dt;
+    m.vy -= C.g * e.vol * dt;
     const sp = Math.hypot(m.vx, m.vy), k = 1 - C.drag * sp * dt; m.vx *= k; m.vy *= k;
     m.x += m.vx * dt; m.y += m.vy * dt;
     // Un tremplin : une grande feuille tendue au-dessus des cimes. Le singe qui tombe dessus rebondit, d'autant plus haut qu'il arrive vite.
@@ -164,14 +167,15 @@ export function arcDore(m, lianas, largeur, prof = 2) {
 
 export class Jeu {
   // nuit : faux pour l'écran d'accueil, où le singe se promène sans danger. monde : le niveau, qui fixe la difficulté.
-  constructor(seed = 1, nuit = true, monde = MONDES[0]) {
+  // e : les réglages du singe du joueur. La forêt, elle, est la même pour tous : les éclaireurs jouent avec la règle de base.
+  constructor(seed = 1, nuit = true, monde = MONDES[0], e = BASE) {
     this.r = rnd(seed); this.d = monde; this.lianas = []; this.id = 0; this.time = 0; this.events = []; this.impasses = 0; this.durs = 0;
     this.file = []; this.prochain = 70 + monde.passage[0] * (0.3 + 0.5 * this.r());       // le premier passage dur n'arrive pas tout de suite
     const li = this.liane(0, 13, 2.4);
-    this.M = { mode: 'swing', li, R: 7, th: -0.55, om: 0, x: 0, y: 0, vx: 0, vy: 0, hold: false, idle: true, depart: false, want: false, air: 0, last: null, chaine: 0, parfaits: 0, saisies: 0, mort: null, arc: null };
+    this.M = { mode: 'swing', li, R: 7, th: -0.55, om: 0, x: 0, y: 0, vx: 0, vy: 0, hold: false, idle: true, depart: false, want: false, air: 0, last: null, chaine: 0, parfaits: 0, saisies: 0, mort: null, arc: null, e };
     pose(this.M);
     // Deux éclaireurs parcourent la forêt à mesure qu'elle pousse : l'un sans élan, l'autre en flux. Une liane n'est gardée que si les deux passent.
-    this.eclaireurs = [0, CFG.crans].map((c) => ({ ...this.M, idle: false, depart: true, chaine: c, cran: c }));
+    this.eclaireurs = [0, CFG.crans].map((c) => ({ ...this.M, e: BASE, idle: false, depart: true, chaine: c, cran: c }));
     while (this.dernier.x < 90) this.addLiana();
     this.nuit = { on: nuit, x: -CFG.nuitDepart, t: 0, v: 0 };
   }
@@ -232,7 +236,7 @@ export class Jeu {
     const li0 = M.mode === 'swing' ? M.li : null, n0 = M.saisies, om0 = M.om;
     pas(M, this.lianas, dt, this.events);
     // À chaque saisie, et à chaque retour vers l'avant, on calcule l'arc doré de cette liane.
-    if (M.mode === 'swing' && !M.idle && (M.saisies !== n0 || (om0 <= 0 && M.om > 0))) M.arc = arcDore(M, this.lianas, this.larg(M.li.x));
+    if (M.mode === 'swing' && !M.idle && (M.saisies !== n0 || (om0 <= 0 && M.om > 0))) M.arc = arcDore(M, this.lianas, this.larg(M.li.x) * M.e.arc);
     if (li0 && M.mode === 'fly') { li0.a = M.th; li0.av = M.om * 0.35; }   // la liane lâchée repart en arrière
     const N = this.nuit;
     if (N.on && !M.idle && !M.mort) {                  // la nuit avance, de plus en plus vite

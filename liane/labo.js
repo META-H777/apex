@@ -1,20 +1,23 @@
 // LIANE — l'atelier du singe : le même mouvement que dans le jeu, découpé image par image, pour juger chaque pose.
 // Paramètres d'adresse : s = chaine | attente | depart | rebond ; de = instant de départ (s) ; n = nombre d'images ; pas = pas de 1/120 s entre deux images ;
 // col = images par ligne ; px = pixels par mètre ; graine ; monde.
-import { Jeu, MONDES, pilote, rnd } from './jeu.js?v=13';
-import { corps, poseSinge, dessinerSinge as silhouette, PERCHE } from './singe.js?v=13';
-import { chargerPeau, dessinerPeau } from './peau.js?v=13';
+import { Jeu, MONDES, pilote, rnd } from './jeu.js?v=15';
+import { corps, poseSinge, dessinerSinge as silhouette, morpho } from './singe.js?v=15';
+import { espece } from './especes.js?v=15';
+import { chargerPeau, dessinerPeau } from './peau.js?v=15';
 // ?peau=araignee : le singe peint à la place de la silhouette.
-const nomPeau = new URLSearchParams(location.search).get('peau'), peau = nomPeau ? chargerPeau(nomPeau) : null;
+// ?espece=gibbon : le corps et les réglages de ce singe ; avec ?peau=gibbon, ses pièces peintes.
+const QS = new URLSearchParams(location.search), ESP = espece(QS.get('espece') || QS.get('peau') || 'araignee'), MORPHO = morpho(ESP.corps), PERCHE = MORPHO.PERCHE;
+const nomPeau = QS.get('peau'), peau = nomPeau ? chargerPeau(nomPeau, ESP.allure) : null;
 if (peau) await new Promise((ok) => { const i = setInterval(() => { if (peau.pret) { clearInterval(i); ok(); } }, 30); setTimeout(ok, 4000); });
 const dessinerSinge = (ctx, p, col, X, Y, S) => (peau && peau.pret ? dessinerPeau(ctx, p, peau, X, Y, S) : silhouette(ctx, p, col, X, Y, S));
 const P = new URLSearchParams(location.search), num = (k, d) => (P.has(k) ? +P.get(k) : d);
 const sc = P.get('s') || 'chaine';
 let de = num('de', 1.2);
 const  N = num('n', 24), pasI = num('pas', 4), COL = num('col', 6), PX = num('px', 40), cell = num('cell', 200);
-const jeu = new Jeu(num('graine', 11), false, MONDES[sc === 'rebond' ? 4 : num('monde', 0)]), M = jeu.M, B = corps(), st = { gout: 1, r: rnd(5) };
+const jeu = new Jeu(num('graine', 11), false, MONDES[sc === 'rebond' ? 4 : num('monde', 0)], ESP.regles), M = jeu.M, B = corps(MORPHO), st = { gout: 1, r: rnd(5) };
 const images = []; let t = 0;
-if (sc === 'rebond') { const j2 = new Jeu(num('graine', 11), false, MONDES[4]), s2 = { gout: 1, r: rnd(5) }; let t2 = 0, vu = 0; while (t2 < 120) { pilote(j2, s2); j2.step(1 / 120); t2 += 1 / 120; if (j2.events.some((e) => e.type === 'rebond') && ++vu > num('k', 0)) break; j2.events.length = 0; } de = t2 - 0.3; }
+if (sc === 'rebond') { const j2 = new Jeu(num('graine', 11), false, MONDES[4], ESP.regles), s2 = { gout: 1, r: rnd(5) }; let t2 = 0, vu = 0; while (t2 < 120) { pilote(j2, s2); j2.step(1 / 120); t2 += 1 / 120; if (j2.events.some((e) => e.type === 'rebond') && ++vu > num('k', 0)) break; j2.events.length = 0; } de = t2 - 0.3; }
 const devant = () => { let d = 99; for (const li of jeu.lianas) { const dx = li.x - M.x; if (dx > -0.9 && li !== M.last && !(M.mode === 'swing' && li === M.li)) { d = dx; break; } } return d; };
 function avance() {
   if (sc === 'attente') { if (t < 0.05) jeu.setHold(true); else if (t < de - 0.2) pilote(jeu, st); else jeu.setHold(true); }

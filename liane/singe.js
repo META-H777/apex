@@ -9,7 +9,7 @@
 //  - Le saut : corps à l'horizontale, ventre vers le bas, les deux bras tendus devant, les jambes derrière, la queue dans le prolongement.
 //  - À la saisie, la main arrive la première ; le corps, lancé, passe dessous comme un poids ; la queue vient reprendre la liane.
 //  - Proportions mesurées sur les films : bras (main comprise) 1,35 fois le tronc, jambe 1 fois, queue 1,5 fois, tronc épais, petite tête ronde.
-import { CFG } from './jeu.js?v=13';
+import { CFG } from './jeu.js?v=15';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k, TAU = Math.PI * 2;
 const lisse = (k) => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
@@ -17,14 +17,22 @@ const dir = (a) => [Math.sin(a), -Math.cos(a)];            // 0 = vers le bas, p
 const ecart = (a, b) => { let d = a - b; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU; return d; };
 
 export const K = 1.4;                                      // le singe est dessiné plus grand que nature, pour se lire d'un coup d'œil
-const TRONC = 0.66 * K, BRAS = 0.37 * K, AVANT = 0.36 * K, MAIN = 0.2 * K, CUISSE = 0.33 * K, JAMBE = 0.32 * K, PIED = 0.17 * K, TETE = 0.108 * K;
-const PRISE = AVANT + MAIN * 0.85, ALLONGE = BRAS + PRISE;  // du coude, puis de l'épaule, au creux des doigts
-const QN = 17, QSEG = 0.0735 * K;                          // la queue : plus longue que le tronc et la tête réunis
-// Au départ il attend perché sur une branche, la liane en main : la branche est à cette distance sous ses mains.
-export const PERCHE = 1.52 * K;
+// Le corps d'une espèce : longueurs en parts de K (tronc, bras, avant-bras, main, cuisse, jambe, pied, rayon de la tête, longueur de la queue).
+// Sans argument : le singe-araignée, mesuré sur les films (bras 1,35 fois le tronc, jambe 1 fois, queue 1,5 fois).
+export function morpho(c = {}) {
+  const k = c.K ?? K, m = { K: k, TRONC: (c.tronc ?? 0.66) * k, BRAS: (c.bras ?? 0.37) * k, AVANT: (c.avant ?? 0.36) * k, MAIN: (c.main ?? 0.2) * k,
+    CUISSE: (c.cuisse ?? 0.33) * k, JAMBE: (c.jambe ?? 0.32) * k, PIED: (c.pied ?? 0.17) * k, TETE: (c.tete ?? 0.108) * k };
+  m.PRISE = m.AVANT + m.MAIN * 0.85; m.ALLONGE = m.BRAS + m.PRISE;      // du coude, puis de l'épaule, au creux des doigts
+  const q = c.queue ?? 1.18; m.QN = q > 0 ? 17 : 1; m.QSEG = q * k / 16;   // la queue ; un gibbon n'en a pas
+  // Au départ il attend perché sur une branche, la liane en main : la branche est à cette distance sous ses mains.
+  m.PERCHE = 0.688 * (m.ALLONGE + m.TRONC + m.CUISSE + m.JAMBE);
+  return m;
+}
+const ATELE = morpho();
+export const PERCHE = ATELE.PERCHE;
 
-export function corps() {
-  return { mode: null, tS: 9, tA: 9, alt: 1, bras: 0, brasV: 0, tronc: -0.4, troncV: 0, flex: 0.4, flexV: 0,
+export function corps(m = ATELE) {
+  return { m, mode: null, tS: 9, tA: 9, alt: 1, bras: 0, brasV: 0, tronc: -0.4, troncV: 0, flex: 0.4, flexV: 0,
     cuisse: [0.9, 1.1], cuisseV: [0, 0], genou: [1.8, 1.9], genouV: [0, 0], h2: [0.2, 0.5], regard: 0, pret: 0, pas: 0, haut: -0.5,
     ax: 0, ay: 0, pvx: 0, pvy: 0, pv: false, bas: 0, qtient: 0, mains: 1, squash: 0, queue: null, qbx: 0, qby: 0, ox: 0, oy: 0, rx: null, ry: 0, qui: 1, ech: 1 };
 }
@@ -40,7 +48,7 @@ function joint(ax, ay, bx, by, l1, l2, side) {
 // env : ancre [x, y] de la liane tenue ; reste : longueur de liane sous les mains ; devant : distance à la prochaine liane ;
 //       tend : le doigt est posé, il tend les bras ; attend : avant le premier geste ; tremplin : une feuille est sous lui.
 export function poseSinge(M, B, dt, env = {}) {
-  const sw = M.mode === 'swing', C = CFG;
+  const sw = M.mode === 'swing', C = CFG, { K, TRONC, BRAS, AVANT, MAIN, CUISSE, JAMBE, PIED, TETE, PRISE, ALLONGE, QN, QSEG, PERCHE } = B.m;
   if (B.mode !== M.mode) { if (B.mode) { if (sw) { B.tS = 0; B.alt = -B.alt; } else { B.tA = 0; if (B.mode === 'swing') { B.qui = 1 - B.qui; B.ech = 0; } } } B.mode = M.mode; }
   const n = Math.max(1, Math.ceil(dt * 120 - 1e-6)), h = dt / n;
   // La pesanteur ressentie par le corps : la vraie, moins l'accélération des mains. Sur la liane elle tire dans l'axe de la corde ; en vol elle est nulle.
@@ -194,12 +202,12 @@ export function poseSinge(M, B, dt, env = {}) {
     // La queue libre continue de vivre derrière lui pendant ce temps : quand elle lâche la liane, elle y revient d'un seul geste, sans fouetter.
     for (let i = 1; i < QN; i++) { const p = qd[i - 1], q = qd[i], dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1e-4; q.x = p.x + dx / d * QSEG; q.y = p.y + dy / d * QSEG; }
   }
-  return { px, py, sx, sy, hx, hy, jx, jy, bras, legs, tete, museau, queue: qd, av, bas: B.bas, saisi: B.tS };
+  return { px, py, sx, sy, hx, hy, jx, jy, bras, legs, tete, museau, queue: qd, av, bas: B.bas, saisi: B.tS, m: B.m };
 }
 
 // Dessine la silhouette. X, Y : du monde vers l'écran ; S : pixels par mètre.
 export function dessinerSinge(ctx, p, col, X, Y, S) {
-  const u = S * K, L = (x1, y1, x2, y2) => { ctx.moveTo(X(x1), Y(y1)); ctx.lineTo(X(x2), Y(y2)); };
+  const { K, TETE } = p.m || ATELE, u = S * K, L = (x1, y1, x2, y2) => { ctx.moveTo(X(x1), Y(y1)); ctx.lineTo(X(x2), Y(y2)); };
   const trait = (w, x1, y1, x2, y2) => { ctx.lineWidth = u * w; ctx.beginPath(); L(x1, y1, x2, y2); ctx.stroke(); };
   ctx.strokeStyle = ctx.fillStyle = col; ctx.lineCap = ctx.lineJoin = 'round';
   // La queue : aussi épaisse qu'un bras à la base, plus fine vers le bout.
