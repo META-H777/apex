@@ -1,14 +1,15 @@
 // LIANE — l'atelier du singe : le même mouvement que dans le jeu, découpé image par image, pour juger chaque pose.
 // Paramètres d'adresse : s = chaine | attente | depart | rebond ; de = instant de départ (s) ; n = nombre d'images ; pas = pas de 1/120 s entre deux images ;
 // col = images par ligne ; px = pixels par mètre ; graine ; monde.
-import { Jeu, MONDES, pilote, rnd } from './jeu.js?v=18';
-import { corps, poseSinge, dessinerSinge as silhouette, morpho } from './singe.js?v=18';
-import { espece } from './especes.js?v=18';
-import { chargerPeau, dessinerPeau } from './peau.js?v=18';
+import { Jeu, MONDES, pilote, rnd } from './jeu.js?v=19';
+import { corps, poseSinge, dessinerSinge as silhouette, morpho } from './singe.js?v=19';
+import { espece } from './especes.js?v=19';
+import { chargerPeau, dessinerPeau } from './peau.js?v=19';
 // ?peau=araignee : le singe peint à la place de la silhouette.
 // ?espece=gibbon : le corps et les réglages de ce singe ; avec ?peau=gibbon, ses pièces peintes.
 const QS = new URLSearchParams(location.search), ESP = espece(QS.get('espece') || QS.get('peau') || 'araignee'), MORPHO = morpho(ESP.corps), PERCHE = MORPHO.PERCHE;
-const nomPeau = QS.get('peau'), peau = nomPeau ? chargerPeau(nomPeau, ESP.allure) : null;
+// ?tenue=ninja : la tenue de ce singe à la place de sa robe.
+const TEN = ESP.tenues.find((t) => t.id === QS.get('tenue')), nomPeau = TEN ? TEN.fichier : QS.get('peau'), peau = nomPeau ? chargerPeau(nomPeau, { ...ESP.allure, ...((TEN && TEN.allure) || {}) }) : null;
 if (peau) await new Promise((ok) => { const i = setInterval(() => { if (peau.pret) { clearInterval(i); ok(); } }, 30); setTimeout(ok, 4000); });
 const dessinerSinge = (ctx, p, col, X, Y, S) => (peau && peau.pret ? dessinerPeau(ctx, p, peau, X, Y, S) : silhouette(ctx, p, col, X, Y, S));
 const P = new URLSearchParams(location.search), num = (k, d) => (P.has(k) ? +P.get(k) : d);

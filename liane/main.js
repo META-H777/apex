@@ -1,14 +1,14 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, un classement Elo, des skins.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=18';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=18';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=18';
-import { ESPECES, COMPETENCES, espece } from './especes.js?v=18';
-import { chargerPeau, dessinerPeau } from './peau.js?v=18';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=18';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=19';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=19';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=19';
+import { ESPECES, COMPETENCES, espece } from './especes.js?v=19';
+import { chargerPeau, dessinerPeau } from './peau.js?v=19';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, acquerir, possede, adversaire, classement } from './rivaux.js?v=19';
 
-const VERSION = 'v0.8';
+const VERSION = 'v0.9';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -45,7 +45,7 @@ let parcours = PARCOURS[0], rival = null, G = null, Bg = null, t = 0, mortT = 0,
 let classe = false, parti = false, aLever = false, appuiFrais = false;     // duel classé ou non ; premier geste fait ; un lever de doigt en attente du prochain pas
 let accueilT = -9, aide = 9, arcVu = null, arcT = 0, cransVus = -1, distVue = -1, nuitVue = '', fluide = 0.016, mesureT = 0;
 const Mg = {}, Ma = {}, trail = [], rings = [], perche = { x: 0, y: 0 };
-let Ba = null, chargeVue = -1, pouvoirT = 0;
+let Ba = null, chargeVue = -1, pouvoirT = 0, dRaf = 0, dT = 0, dLast = 0, Bp = null;
 const X = (x) => (x - camX) * S + W * vue, Y = (y) => baseY - y * S + camDy;
 function scene(seed, nuit) { jeu = new Jeu(seed, nuit, monde, esp.regles); M = jeu.M; B = corps(morpho(esp.corps)); perche.x = M.x; perche.y = M.y - B.m.PERCHE; pil = { gout: 0.9 }; camX = M.x + 3; camLead = 3; trail.length = 0; rings.length = 0; mortT = 0; arcVu = null; }
 const dire = (txt) => { $('note').textContent = txt; $('note').classList.remove('vu'); };
@@ -74,7 +74,8 @@ function changerMonde(pas) {
 function accueil() {
   doigts.clear(); phase = 'accueil'; accueilT = time; scene((Math.random() * 1e9) | 0, false); majAccueil(); journal('accueil');
   $('fin').classList.remove('pret');
-  for (const id of ['fin', 'hud', 'classement', 'skins', 'singes']) $(id).classList.remove('on');
+  for (const id of ['fin', 'hud', 'classement', 'skins', 'singes', 'dressing']) $(id).classList.remove('on');
+  if (dRaf) { cancelAnimationFrame(dRaf); dRaf = 0; }
   $('accueil').classList.add('on'); taire();
 }
 // Un duel classé se joue contre un nouveau rival. Rejouer le même parcours contre le même rival est un entraînement : l'Elo ne bouge pas.
@@ -86,7 +87,7 @@ function lancer(rejouer, source = 'code') {
   G = fantome(parcours, rival, monde); Bg = corps(); scene(parcours, true);
   phase = 'course'; t = 0; depasse = false; ecartT = -9; distVue = -1; nuitVue = ''; majCrans(0); chargeVue = -2; pouvoirT = 0; $('pNom').textContent = esp.pouvoir.nom; majPouvoir();
   aide = profil.v + profil.d < 3 ? 0 : 9;                // les premières parties, le jeu dit quoi faire, liane après liane
-  for (const id of ['accueil', 'fin', 'classement', 'skins', 'singes']) $(id).classList.remove('on');
+  for (const id of ['accueil', 'fin', 'classement', 'skins', 'singes', 'dressing']) $(id).classList.remove('on');
   $('hud').classList.add('on'); $('chrono').textContent = '0 m'; $('ecart').className = 'maj'; $('nuit').classList.remove('on');
   // La distance du rival ne s'affiche qu'une fois parti : on ne choisit pas ses adversaires.
   $('hMoi').textContent = classe ? 'toi · ' + profil.elo : 'toi · entraînement'; $('hLui').textContent = rival.nom + ' · ' + rival.elo;
@@ -144,6 +145,7 @@ clic('bSuivant', () => { if (pret()) lancer(false, 'bouton duel suivant'); }); c
 clic('mPrec', () => changerMonde(-1)); clic('mSuiv', () => changerMonde(1));
 clic('bClassement', () => { ouvrirClassement(); }); clic('bSkins', () => { ouvrirSkins(); }); clic('bSinge', () => { ouvrirSinges(); });
 clic('gFermer', () => { $('singes').classList.remove('on'); accueilT = time; });
+clic('bDressing', () => { ouvrirDressing(); }); clic('dFermer', () => { accueil(); }); clic('dPrec', () => { tourner(-1); }); clic('dSuiv', () => { tourner(1); });
 clic('cFermer', () => { $('classement').classList.remove('on'); accueilT = time; }); clic('sFermer', () => { $('skins').classList.remove('on'); accueilT = time; });
 
 function ouvrirClassement() {
@@ -156,11 +158,33 @@ function ouvrirClassement() {
 function ouvrirSinges() {
   $('gListe').innerHTML = ESPECES.map((e) => {
     const choisi = esp.id === e.id, pts = COMPETENCES.map(([k, nom]) => `<li><span>${nom}</span><em>${'<i class="p"></i>'.repeat(e.points[k])}${'<i></i>'.repeat(5 - e.points[k])}</em></li>`).join('');
-    return `<button class="singe ${choisi ? 'choisi' : ''}" data-singe="${e.id}"><img src="singes/${e.id}-portrait.png?v=18" alt=""><b>${e.nom}</b><small>${e.mot}</small><ul>${pts}</ul><p>${e.geste}</p><p class="pv"><em>${e.pouvoir.nom}</em> · ${e.pouvoir.texte}</p><span class="etat">${choisi ? 'choisi' : 'choisir'}</span></button>`;
+    return `<button class="singe ${choisi ? 'choisi' : ''}" data-singe="${e.id}"><img src="singes/${e.id}-portrait.png?v=19" alt=""><b>${e.nom}</b><small>${e.mot}</small><ul>${pts}</ul><p>${e.geste}</p><p class="pv"><em>${e.pouvoir.nom}</em> · ${e.pouvoir.texte}</p><span class="etat">${choisi ? 'choisi' : 'choisir'}</span></button>`;
   }).join('');
   $('singes').classList.add('on');
 }
 $('gListe').addEventListener('click', (e) => { const b = e.target.closest('[data-singe]'); if (!b) return; profil.singe = b.dataset.singe; garder(); choisirSinge(profil.singe); accueil(); });
+// Le dressing : le singe choisi, en grand, pendu à une liane ; ses tenues dessous. Les flèches changent de singe.
+const Mp = { mode: 'swing', idle: false, depart: false, hold: true, li: null };
+function majDressing() {
+  Bp = corps(morpho(esp.corps)); $('dNom').textContent = esp.nom; const portee = tenueDe(esp);
+  $('dListe').innerHTML = esp.tenues.map((t) => `<button class="tenue ${t.id === portee.id ? 'choisi' : ''}" data-tenue="${t.id}"><b>${t.nom}</b><span>${t.id === portee.id ? 'portée' : 'essayer'}</span></button>`).join('');
+}
+function ouvrirDressing() { majDressing(); $('dressing').classList.add('on'); if (!dRaf) { dLast = performance.now(); dRaf = requestAnimationFrame(dessinerDressing); } }
+function tourner(d) { profil.singe = ESPECES[(ESPECES.indexOf(esp) + d + ESPECES.length) % ESPECES.length].id; garder(); choisirSinge(profil.singe); majDressing(); }
+$('dListe').addEventListener('click', (e) => { const b = e.target.closest('[data-tenue]'); if (!b) return; profil.tenues[esp.id] = b.dataset.tenue; garder(); choisirSinge(esp.id); majDressing(); });
+function dessinerDressing(now) {
+  dRaf = requestAnimationFrame(dessinerDressing);
+  const cv = $('dApercu'), r = cv.getBoundingClientRect(), d = Math.min(3, devicePixelRatio || 1), w = Math.round(r.width * d), h = Math.round(r.height * d);
+  if (!w || !h || !Bp) return; if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const pas = Math.min(0.05, Math.max(0.001, (now - dLast) / 1000)); dLast = now; dT += pas;
+  const g = cv.getContext('2d'), m = Bp.m, Sp = h / ((m.ALLONGE + m.TRONC + m.CUISSE + m.JAMBE) * 1.42), R = 3.2, th = 0.28 * Math.sin(dT * 1.5), om = 0.42 * Math.cos(dT * 1.5);
+  g.clearRect(0, 0, w, h);
+  Mp.th = th; Mp.om = om; Mp.R = R; Mp.x = R * Math.sin(th); Mp.y = R - R * Math.cos(th); Mp.vx = R * om * Math.cos(th); Mp.vy = R * om * Math.sin(th); Mp.li = { x: 0, y: R, L: R + 3 };
+  const Xp = (x) => w * 0.56 + x * Sp, Yp = (y) => h * 0.13 - y * Sp;
+  const p = poseSinge(Mp, Bp, pas, { ancre: [0, R], reste: 3, devant: 99, attend: false, tend: true });
+  g.strokeStyle = 'rgba(11,42,46,.95)'; g.lineWidth = Math.max(2, Sp * 0.07); g.lineCap = 'round'; g.beginPath(); g.moveTo(Xp(0), Yp(R)); g.lineTo(Xp(p.px), Yp(p.py)); g.lineTo(Xp(p.px + Math.sin(p.bas) * 3), Yp(p.py - Math.cos(p.bas) * 3)); g.stroke();
+  if (peau && peau.pret) dessinerPeau(g, p, peau, Xp, Yp, Sp); else dessinerSinge(g, p, '#0b1d16', Xp, Yp, Sp);
+}
 function ouvrirSkins() {
   $('sListe').innerHTML = SKINS.map((s) => {
     const ok = possede(s), choisi = profil.skin === s.id;
@@ -184,7 +208,10 @@ const drawMonkey = (p, col) => dessinerSinge(ctx, p, col, X, Y, S);
 // Le singe peint (pièces faites avec Higgsfield, posées sur le même squelette). ?singe=code garde la silhouette dessinée par le code.
 // ?singe=gibbon force une espèce pour un essai.
 let esp = espece(profil.singe), peau = null; const peaux = {}, sansPeau = params.get('singe') === 'code';
-function choisirSinge(id) { esp = espece(id); peau = sansPeau ? null : (peaux[esp.id] = peaux[esp.id] || chargerPeau(esp.id, esp.allure)); }
+// La tenue portée par un singe (?tenue=ninja en force une pour un essai), et l'atlas de pièces qui va avec.
+const tenueDe = (e) => e.tenues.find((t) => t.id === (params.get('tenue') || profil.tenues[e.id])) || e.tenues[0];
+const peauDe = (e, t) => (peaux[t.fichier] = peaux[t.fichier] || chargerPeau(t.fichier, { ...e.allure, ...(t.allure || {}) }));
+function choisirSinge(id) { esp = espece(id); peau = sansPeau ? null : peauDe(esp, tenueDe(esp)); }
 choisirSinge(params.get('singe') && !sansPeau ? params.get('singe') : profil.singe);
 
 // La branche du départ : le singe y attend, la liane en main, avant de se laisser partir.

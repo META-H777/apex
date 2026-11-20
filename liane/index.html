@@ -88,6 +88,21 @@
   #cListe li.moi { background:rgba(255,246,220,.1); border-radius:6px; }
   #cListe .p { width:9%; opacity:.6; } #cListe i { width:9px; height:9px; border-radius:50%; flex:none; box-shadow:0 0 0 1px rgba(255,246,220,.35); }
   #cListe .n { flex:1; text-align:left; } #cListe .r { opacity:.6; font-size:.82em; } #cListe .e { width:16%; text-align:right; }
+  .dCorps { flex:1; min-height:0; width:min(100%, 900px); display:flex; align-items:center; justify-content:center; gap:4vw; }
+  .dVue { display:flex; align-items:center; gap:1vw; height:100%; min-width:0; }
+  .dVue button { font-size:min(7vw, 44px); padding:0 2vw; border:0; }
+  #dApercu { position:static; flex:none; height:62vh; width:46.5vh; border-radius:14px; background:radial-gradient(120% 90% at 50% 30%, #f6e9b8 0%, #bfe0cf 42%, #4f9c95 100%); }
+  .dCote { display:flex; flex-direction:column; align-items:center; gap:2.2vh; min-width:28%; }
+  .dCote > b { font-weight:400; letter-spacing:.16em; font-size:min(2.2vw, 16px); }
+  #dListe { display:flex; flex-direction:column; gap:1.4vh; width:100%; }
+  .tenue { display:flex; justify-content:space-between; align-items:center; gap:3vw; padding:1.6vh 2vw; border:1px solid rgba(255,246,220,.16); border-radius:10px; background:rgba(255,246,220,.04); color:inherit; font:inherit; cursor:pointer; }
+  .tenue.choisi { border-color:rgba(255,220,150,.85); background:rgba(255,220,150,.1); }
+  .tenue b { font-weight:400; letter-spacing:.14em; text-transform:uppercase; font-size:min(1.9vw, 14px); } .tenue span { font-size:min(1.4vw, 10px); letter-spacing:.2em; text-transform:uppercase; opacity:.7; }
+  @media (orientation:portrait) {
+    .dCorps { flex-direction:column; gap:2vh; } .dVue { height:auto; flex:1; min-height:0; width:100%; justify-content:center; }
+    #dApercu { height:46vh; width:34.5vh; } .dCote { width:100%; } .dCote > b { font-size:4.2vw; }
+    #dListe { flex-direction:row; flex-wrap:wrap; justify-content:center; gap:3vw; } .tenue { flex-direction:column; gap:.6vh; padding:1.6vh 6vw; } .tenue b { font-size:3.6vw; } .tenue span { font-size:2.6vw; }
+  }
   #gListe { display:grid; grid-template-columns:repeat(4, 1fr); gap:1.6vw; width:min(100%, 900px); margin-top:1.5vh; flex:1; min-height:0; overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch; }
   .singe { display:flex; flex-direction:column; align-items:center; gap:.5vh; padding:1.2vh 1vw 1.4vh; border:1px solid rgba(255,246,220,.16); border-radius:10px; background:rgba(255,246,220,.04); color:inherit; font:inherit; cursor:pointer; min-width:0; }
   .singe.choisi { border-color:rgba(255,220,150,.85); background:rgba(255,220,150,.1); }
@@ -149,7 +164,7 @@
     <div class="mondes maj" data-ui><button id="mPrec" aria-label="niveau précédent">‹</button><b id="mNom"></b><button id="mSuiv" aria-label="niveau suivant">›</button></div>
     <div class="maj" id="mInfo"></div>
   </div>
-  <div class="menu"><button class="lien maj" id="bSinge" data-ui>singe</button><button class="lien maj" id="bClassement" data-ui>classement</button><button class="lien maj" id="bSkins" data-ui>skins</button></div>
+  <div class="menu"><button class="lien maj" id="bSinge" data-ui>singe</button><button class="lien maj" id="bDressing" data-ui>dressing</button><button class="lien maj" id="bClassement" data-ui>classement</button><button class="lien maj" id="bSkins" data-ui>traînées</button></div>
   <div class="go maj">touche pour défier un rival</div>
 </div>
 
@@ -186,9 +201,19 @@
   <div class="pied">seize points chacun · aucun n'est le meilleur partout</div>
 </div>
 
+<div id="dressing" class="ecran panneau" data-ui>
+  <button class="lien maj fermer" id="dFermer">fermer</button>
+  <h2 class="maj">dressing</h2>
+  <div class="dCorps">
+    <div class="dVue"><button class="lien" id="dPrec" aria-label="singe précédent">‹</button><canvas id="dApercu"></canvas><button class="lien" id="dSuiv" aria-label="singe suivant">›</button></div>
+    <div class="dCote"><b class="maj" id="dNom"></b><div id="dListe"></div></div>
+  </div>
+  <div class="pied">une tenue par singe pour commencer · la boutique viendra ensuite</div>
+</div>
+
 <div id="skins" class="ecran panneau" data-ui>
   <button class="lien maj fermer" id="sFermer">fermer</button>
-  <h2 class="maj">skins</h2>
+  <h2 class="maj">traînées</h2>
   <div id="sListe"></div>
   <div class="pied">ils se gagnent en montant au classement · la boutique viendra ensuite</div>
 </div>
@@ -197,6 +222,6 @@
 <div id="note" class="txt maj ombre vu"></div>
 <div id="version"></div>
 <div id="chargement" class="maj">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=18"></script>
+<script type="module" src="main.js?v=19"></script>
 </body>
 </html>
