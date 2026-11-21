@@ -9,7 +9,7 @@
 //  - Le saut : corps à l'horizontale, ventre vers le bas, les deux bras tendus devant, les jambes derrière, la queue dans le prolongement.
 //  - À la saisie, la main arrive la première ; le corps, lancé, passe dessous comme un poids ; la queue vient reprendre la liane.
 //  - Proportions mesurées sur les films : bras (main comprise) 1,35 fois le tronc, jambe 1 fois, queue 1,5 fois, tronc épais, petite tête ronde.
-import { CFG } from './jeu.js?v=32';
+import { CFG } from './jeu.js?v=33';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k, TAU = Math.PI * 2;
 const lisse = (k) => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
@@ -232,7 +232,9 @@ export function poseSinge(M, B, dt, env = {}) {
     // La queue libre continue de vivre derrière lui pendant ce temps : quand elle lâche la liane, elle y revient d'un seul geste, sans fouetter.
     for (let i = 1; i < QN; i++) { const p = qd[i - 1], q = qd[i], dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1e-4; q.x = p.x + dx / d * QSEG; q.y = p.y + dy / d * QSEG; }
   }
-  return { px, py, sx, sy, hx, hy, jx, jy, bras, legs, tete, museau, queue: qd, av, bas: B.bas, saisi: B.tS, m: B.m };
+  // Les mains qui tiennent la liane (pour que la peau referme les doigts dessus) : celle qui tient, et l'autre quand il attend ou s'attarde.
+  const prises = [0, 1].map((i) => sw && (i === B.qui ? ke > 0.6 : lisse(B.mains) > 0.6));
+  return { px, py, sx, sy, hx, hy, jx, jy, bras, legs, tete, museau, queue: qd, av, bas: B.bas, saisi: B.tS, m: B.m, tient: prises };
 }
 
 // Dessine la silhouette. X, Y : du monde vers l'écran ; S : pixels par mètre.

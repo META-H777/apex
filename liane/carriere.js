@@ -1,6 +1,6 @@
 // LIANE — la carrière du joueur, façon chess.com : l'historique de ses duels, la courbe de son Elo, ses statistiques, ses trophées,
 // ses adversaires réels et sa série de jours. Tout est gardé sur l'appareil (profil, rivaux.js) tant qu'il n'y a pas de serveur.
-import { profil, garder, rang, RANGS } from './rivaux.js?v=32';
+import { profil, garder, rang, RANGS } from './rivaux.js?v=33';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const jour = (d = new Date()) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');

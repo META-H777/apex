@@ -186,6 +186,9 @@
 
   /* ---------- L'annonce du duel ---------- */
   #duel { z-index:7; background:radial-gradient(120% 80% at 50% 45%, rgba(3,24,28,.8), rgba(2,14,18,.97)); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:0 14px; }
+  #vsVue { width:min(100%, 560px); height:min(36vh, 330px); display:block; flex:none; }
+  #bMain { position:absolute; transform:translateX(-50%); height:40px; padding:0 16px; font-size:12px; letter-spacing:.06em; white-space:nowrap; background:rgba(3,20,24,.72); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); z-index:2; } #bMain[hidden] { display:none; } #bMain.invite { border-color:var(--vert); color:var(--vert); animation:pouls 1.8s infinite; }
+  #dnAction2 { width:100%; height:48px; } #dnAction2[hidden] { display:none; }
   #duel > small { font-size:10.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--doux); text-align:center; line-height:1.6; }
   .vsRang { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:10px; width:min(100%, 540px); }
   .vsCote { padding:16px 8px 14px; display:flex; flex-direction:column; align-items:center; gap:5px; text-align:center; min-width:0; opacity:0; transform:translateX(-36px); transition:transform .5s var(--doux-mvt), opacity .35s; }
@@ -368,7 +371,7 @@
     #chrono { font-size:34px; } #crans { top:calc(var(--st) + 54px); }
     .fCarte { width:min(100%, 760px); flex-direction:row; align-items:center; gap:28px; } .fG, .fD { flex:1; } .fG { gap:9px; } #fTemps { font-size:min(88px, 26vh); }
     #xSinges img { width:34px; height:34px; border-radius:11px; } #xSinges button { flex-direction:row; justify-content:center; gap:7px; padding:5px 4px; } #direct .feuille { margin-top:calc(var(--st) + 8px); max-height:calc(100% - var(--st) - 16px); gap:7px; padding-top:14px; } #direct .essai { font-size:11px; padding:7px 10px; } #xCodeVu { font-size:44px; }
-    #duel { gap:10px; } .vsCote { padding:10px 8px; } .vsCote img, .avatar { width:62px; height:62px; border-radius:20px; } .avatar { font-size:27px; }
+    #duel { gap:10px; } #vsVue { height:34vh; } .vsCote { padding:10px 8px; } .vsCote img, .avatar { width:62px; height:62px; border-radius:20px; } .avatar { font-size:27px; }
     .singe { flex-basis:min(74vw, 560px); display:grid; grid-template-columns:1fr 1fr; column-gap:16px; align-items:start; } .singe .sHaut, .singe .sTenues, .singe .btn { grid-column:1 / -1; } .sHaut img { width:68px; height:68px; }
     .fInfo h3 { font-size:22px; } .une { min-height:150px; }
   }
@@ -410,6 +413,7 @@
 
 <div id="duel" class="ecran" data-ui>
   <small id="vTitre"></small>
+  <canvas id="vsVue"></canvas>
   <div class="vsRang">
     <div class="vsCote carte"><img id="vMoiImg" alt=""><b>Toi</b><span class="vsElo"><span class="emb" id="vMoiEmb"></span><span id="vMoiElo"></span></span><small id="vMoiRang"></small></div>
     <div class="vs">VS</div>
@@ -421,6 +425,7 @@
 
 <div id="fin" class="ecran" data-ui>
   <div class="sElo" id="sMoi"><small>Toi</small><b><span class="emb" id="sMoiEmb"></span><span id="sMoiElo"></span></b><i id="sMoiD"></i><em id="sMoiSuite"></em></div>
+  <button class="btn creux" id="bMain" hidden></button>
   <div class="sElo" id="sLui"><small id="sLuiNom"></small><b><span class="emb" id="sLuiEmb"></span><span id="sLuiElo"></span></b><i id="sLuiD"></i></div>
   <div class="fCarte">
     <div class="fG">
@@ -546,7 +551,7 @@
   <div class="feuille">
     <canvas id="dnVue"></canvas>
     <b id="dnNom"></b><p id="dnTexte"></p>
-    <button class="cta" id="dnAction"><b id="dnBouton"></b></button><button id="dnFermer">Fermer</button>
+    <button class="cta" id="dnAction"><b id="dnBouton"></b></button><button class="btn creux" id="dnAction2" hidden></button><button id="dnFermer">Fermer</button>
   </div>
 </div>
 
@@ -570,6 +575,6 @@
 <div id="decompte" class="ombre"></div>
 <div id="version"></div>
 <div id="chargement">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=32"></script>
+<script type="module" src="main.js?v=33"></script>
 </body>
 </html>

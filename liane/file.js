@@ -2,7 +2,7 @@
 // Sans serveur, la file d'attente est une salle sur les relais publics (reseau.js) : chacun y dit « je cherche » chaque seconde, avec son Elo.
 // Deux joueurs d'Elo assez proches se trouvent : le plus petit identifiant propose une partie (un code), l'autre accepte,
 // puis le duel en direct habituel prend le relais avec ce code. L'écart d'Elo accepté s'élargit à mesure qu'on attend.
-import { salle, nouveauCode } from './reseau.js?v=32';
+import { salle, nouveauCode } from './reseau.js?v=33';
 
 const SUJET = 'liane-duel/1/file';
 export const ecartAccepte = (s) => s >= 20 ? Infinity : 150 + 25 * s;     // en points d'Elo, après s secondes d'attente

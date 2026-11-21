@@ -39,12 +39,22 @@ function ik(a, t, l1, l2, pole) {
 // ql, qc, qs, qw, qf : la queue (relevée, enroulée, sur le côté, l'ampleur et la fréquence de son ondulation). vib : un frisson de puissance.
 export const NEUTRE = { x: 0, y: 0, z: 0, fx: 0, fz: 0, yaw: 0.8, lean: 0.12, roll: 0, salto: 0, bend: 0.06, side: 0, twist: 0, nod: 0.06, turn: 0, tilt: 0,
   md: [0.1, -0.88, 0.17], mg: [0.1, -0.88, 0.17], cd: [-0.35, -0.35, 0.85], cg: [-0.35, -0.35, 0.85], pd: [0.02, 0.17, 0], pg: [0.02, 0.17, 0],
-  vol: 0, ad: [0.3, -0.6, 0.08], ag: [0.3, -0.6, 0.08], ql: 0.28, qc: 0.09, qs: 0, qw: 0.12, qf: 0.8, vib: 0 };
+  vol: 0, ad: [0.3, -0.6, 0.08], ag: [0.3, -0.6, 0.08], ql: 0.28, qc: 0.09, qs: 0, qw: 0.12, qf: 0.8, vib: 0,
+  // Pour les gestes à deux (gestes.js) : wd, wg, une main posée en un point précis de la scène [x, y, z] en mètres (vers l'autre, vers le haut, vers nous),
+  // avec kd, kg de 0 (la main suit le corps) à 1 (elle est en ce point) ; fd, fg la forme de la main ; od, og ce qu'elle tient ;
+  // bulle : ce qu'il ressent, dessiné au-dessus de sa tête ; creme : du gâteau sur la figure ; flash : l'éclair d'une photo.
+  wd: [0, 1, 0], wg: [0, 1, 0], kd: 0, kg: 0, fd: 0, fg: 0, od: 0, og: 0, bulle: 0, creme: 0, flash: 0, oreille: 0 };
 const META = new Set(['t', 'e', 'arc', 'stop']);
+// Les canaux qui changent d'un coup, sans transition : une main est un poing ou ne l'est pas.
+const SAUT = new Set(['fd', 'fg', 'od', 'og', 'bulle', 'oreille']);
+const RESTE = ['creme', 'oreille'];             // ce qu'un geste laisse sur le singe jusqu'à la fin de la scène
+export const MAIN = { ouverte: 0, poing: 1, doigt: 2, rond: 3, index: 4, pouce: 5, v: 6 };
+export const OBJET = { rien: 0, fleur: 1, gateau: 2, tel: 3 };
+export const BULLE = { rien: 0, oh: 1, quoi: 2, coeur: 3, dort: 4, colere: 5, rire: 6 };
 
 // Une danse écrite devient, pour chaque canal, une suite de clés triées. Une boucle se referme sur sa première clé
 // (plus un tour entier pour les canaux de rotation qui le demandent, dans boucle).
-function compiler(def, ferme = true) {
+export function compiler(def, ferme = true) {
   const T = def.temps || 0.5, D = def.duree, C = {};
   for (const k of def.cles) for (const c in k) {
     if (META.has(c)) continue;
@@ -52,13 +62,18 @@ function compiler(def, ferme = true) {
   }
   for (const c in C) {      // deux clés au même instant : la dernière écrite l'emporte
     const L = C[c].sort((a, b) => a.t - b.t).filter((k, i, T) => !(T[i + 1] && T[i + 1].t - k.t < 1e-6)), o = (def.boucle && def.boucle[c]) || 0, n0 = NEUTRE[c] ?? 0, z = Array.isArray(n0) ? n0 : [n0];
-    if (L[0].t > 1e-6) L.unshift({ t: 0, v: (ferme ? z : L[0].v).slice(), e: 'cr', arc: 0, stop: false });
+    const b0 = def.base && c in def.base ? (Array.isArray(def.base[c]) ? def.base[c] : [def.base[c]]) : z;
+    // Dans un geste à deux, un canal garde sa pose de base jusqu'à un tiers de seconde avant sa première clé : sinon il y glisserait dès le début.
+    if (!ferme && def.base && L[0].t > 0.36) L.unshift({ t: L[0].t - 0.3, v: b0.slice(), e: 'io', arc: 0, stop: true });
+    if (L[0].t > 1e-6) L.unshift({ t: 0, v: (ferme ? z : def.base ? b0 : L[0].v).slice(), e: 'cr', arc: 0, stop: false });
     if (ferme && L[L.length - 1].t < D - 1e-6) L.push({ t: D, v: L[0].v.map((v) => v + o), e: 'cr', arc: 0, stop: false });
+    // Un geste à deux revient à la pose de base à sa fin, sauf ce qui reste après lui : la crème, la fleur à l'oreille.
+    if (!ferme && def.base && !RESTE.includes(c) && L[L.length - 1].t < D - 1e-6) L.push({ t: D, v: b0.slice(), e: 'io', arc: 0, stop: false });
     C[c] = { L, o };
   }
   // Les mains gardent aussi leur distance à l'épaule : entre deux clés, la main tourne autour de l'épaule au lieu de passer au ras du corps.
   for (const c of ['md', 'mg']) if (C[c]) C[c + 'r'] = { L: C[c].L.map((k) => ({ ...k, v: [Math.hypot(...k.v)] })), o: 0 };
-  return { D, C, ferme, def };
+  return { D, C, ferme, def, base: def.base || null };
 }
 const COURBE = { io: lisse, hit: (k) => 1 - Math.pow(1 - k, 3), out: (k) => k * k, lin: (k) => k, step: (k) => (k < 1 ? 0 : 1),
   back: (k) => { const s = 1.7; k -= 1; return 1 + k * k * ((s + 1) * k + s); } };
@@ -67,6 +82,7 @@ function canal(X, c, u, D, ferme) {
   const { L, o } = X, n = L.length;
   if (u <= L[0].t) return L[0].v; if (u >= L[n - 1].t) return L[n - 1].v;
   let i = 0; while (i < n - 2 && L[i + 1].t <= u) i++;
+  if (SAUT.has(c)) return L[i].v;
   const a = L[i], b = L[i + 1], dt = b.t - a.t, k = (u - a.t) / dt, out = [];
   // La pente en une clé : celle de ses voisines (Catmull-Rom) ; nulle si la clé est un arrêt, ou au bout d'un geste qui ne boucle pas.
   const pente = (j, comp) => {
@@ -89,7 +105,7 @@ function poseA(P, u) {
   const r = {}; let cycle = 0;
   if (P.ferme) { cycle = Math.floor(u / P.D); u -= cycle * P.D; }
   for (const c in NEUTRE) {
-    const X = P.C[c]; if (!X) { r[c] = Array.isArray(NEUTRE[c]) ? NEUTRE[c] : NEUTRE[c]; continue; }
+    const X = P.C[c]; if (!X) { r[c] = P.base && c in P.base ? P.base[c] : NEUTRE[c]; continue; }
     const v = canal(X, c, u, P.D, P.ferme); r[c] = v.length > 1 ? v : v[0] + X.o * cycle;
   }
   for (const c of ['md', 'mg']) if (P.C[c + 'r']) { const l = canal(P.C[c + 'r'], c, u, P.D, P.ferme)[0], v = r[c], n = Math.hypot(...v) || 1; if (n < l) r[c] = v.map((x) => x * l / n); }
@@ -120,7 +136,8 @@ function squelette(m, P, tau, avant = null) {
   for (const [cote, s, h, c] of [['d', 1, P.md, P.cd], ['g', -1, P.mg, P.cg]]) {
     const ep = rep(S, Rc, s * 0.075 * K, Fc, -0.012 * K, Uc, -0.02 * K);
     // Le coude pointe vers c ; et aussi un peu là où il était à l'image d'avant : quand le bras passe dans l'axe de c, il ne saute pas de l'autre côté.
-    const cible = rep(ep, Fc, h[0] * A, Uc, h[1] * A, Rc, s * h[2] * A), vu = avant && avant.bras[cote][1];
+    let cible = rep(ep, Fc, h[0] * A, Uc, h[1] * A, Rc, s * h[2] * A); const vu = avant && avant.bras[cote][1], kw = clamp(s > 0 ? P.kd : P.kg, 0, 1);
+    if (kw > 0) cible = mx(cible, s > 0 ? P.wd : P.wg, kw);
     const pole = ad(ad(ep, un([Fc[0] * c[0] + Uc[0] * c[1] + Rc[0] * s * c[2], Fc[1] * c[0] + Uc[1] * c[1] + Rc[1] * s * c[2], Fc[2] * c[0] + Uc[2] * c[1] + Rc[2] * s * c[2]])), vu ? fo(un(sb(vu, ep)), 0.7) : [0, 0, 0]);
     const [co, bout] = ik(ep, cible, BRAS, PRISE, pole), dm = un(sb(bout, co));
     bras[cote] = [ep, co, ad(co, fo(dm, AVANT)), bout];
@@ -145,7 +162,7 @@ function squelette(m, P, tau, avant = null) {
       cible.push(ad(cible[i - 1], fo(d, m.QSEG)));
     }
   }
-  return { B, S, tete, Fc, Uc, Rc, Fh, Uh, bras, jambes, cible, Fp, Up };
+  return { B, S, tete, Fc, Uc, Rc, Fh, Uh, bras, jambes, cible, Fp, Up, forme: { d: P.fd, g: P.fg }, objet: { d: P.od, g: P.og }, bulle: P.bulle, creme: P.creme, flash: P.flash, oreille: P.oreille };
 }
 
 // ---------- Un danseur : la danse en cours, ce qui suit avec retard (mains, tête, queue) ----------
@@ -155,14 +172,46 @@ function ressort(r, c, h, w, z) { for (let i = 0; i < c.length; i++) { r.v[i] +=
 
 export const INTRO = 1.35;            // le lâcher et la réception, avant la danse
 // m : les mesures. id : la danse. depuis (facultatif) : la pose du singe pendu à sa liane, pour que la danse en parte sans à-coup.
+// Un singe sans danse : il prend la pose donnée (un geste compilé), par exemple l'attente avant le duel.
+export function acteur(m, P) { return { m, d: null, P, intro: null, t: 0, r: null, q: null, J: null, ventre: false, face: 1 }; }
+// Un singe qui lâche sa liane, se reçoit sur la branche, puis prend la pose P (un geste compilé, souvent une attente qui boucle).
+export function atterrir(m, depuis, P) {
+  const e = acteur(m, P); e.intro = introDepuis(m, depuis);
+  if (depuis.queue && depuis.queue.length === m.QN) e.q = depuis.queue.map((q) => ({ p: [q.x, q.y, 0], v: [0, 0, 0] }));
+  return e;
+}
 export function danseur(m, id, depuis = null) {
   const d = danseDe(id), e = { m, d, P: compiler(d), intro: null, t: 0, r: null, q: null, J: null, ventre: false, face: 1 };
   if (depuis) { e.intro = introDepuis(m, depuis); if (depuis.queue && depuis.queue.length === m.QN) e.q = depuis.queue.map((q) => ({ p: [q.x, q.y, 0], v: [0, 0, 0] })); }
   return e;
 }
+// Un geste après l'autre : jouer() pose un nouveau geste, qui part de la pose où le singe se trouve (fondu d'un quart de seconde).
+// Un geste qui ne boucle pas appelle ensuite fin(e), qui peut en jouer un autre ; sinon le singe garde sa dernière pose.
+export function jouer(e, P, fin = null, fondu = 0.28) { e.P = P; e.intro = null; e.sorti = true; e.t = 0; e.fin = fin; e.depuis = e.pose ? { ...e.pose } : null; e.fondu = fondu; }
+// Le singe est libre : il a fini sa réception et ne joue pas un geste à deux (il attend ou il danse, en boucle).
+export const libre = (e) => (!e.intro || e.t >= INTRO) && e.P.ferme;
+const ANGLES = ['yaw', 'pied', 'salto'];
+function melange(a, b, k) {
+  const r = {};
+  for (const c in b) {
+    const x = a[c], y = b[c]; if (x === undefined) { r[c] = y; continue; }
+    if (Array.isArray(y)) r[c] = y.map((v, i) => lerp(x[i], v, k));
+    else if (SAUT.has(c)) r[c] = k < 0.5 ? x : y;
+    else if (ANGLES.includes(c)) { let d = x - y; d -= Math.round(d / TAU) * TAU; r[c] = y + d * (1 - k); }
+    else r[c] = lerp(x, y, k);
+  }
+  return r;
+}
 export function avancer(e, dt) {
   dt = clamp(dt, 0, 0.1); e.t += dt;
-  const P = e.intro && e.t < INTRO ? poseA(e.intro, e.t) : poseA(e.P, e.t - (e.intro ? INTRO : 0));
+  if (!e.reste) e.reste = {};
+  if (!e.intro && !e.P.ferme && e.fin && e.t >= e.P.D) { const f = e.fin; e.fin = null; e.t -= e.P.D; if (e.pose) for (const c of RESTE) e.reste[c] = Math.max(e.reste[c] || 0, e.pose[c] || 0); f(e); }
+  // u : le temps dans le geste en cours (après la réception, s'il y en a une). À la sortie de la réception, on fond la pose vers le geste.
+  const u = e.intro ? e.t - INTRO : e.t;
+  if (e.intro && u >= 0 && !e.sorti) { e.sorti = true; e.depuis = e.pose ? { ...e.pose } : null; e.fondu = 0.35; }
+  let P = e.intro && u < 0 ? poseA(e.intro, e.t) : poseA(e.P, u);
+  if (e.depuis && u >= 0 && u < e.fondu) P = melange(e.depuis, P, lisse(u / e.fondu));
+  for (const c of RESTE) P[c] = Math.max(P[c] || 0, e.reste[c] || 0);
   // Les ressorts : pas fins, pour rester stables même quand l'image saute.
   if (!e.r) { e.r = {}; for (const c in RESSORTS) { const v = Array.isArray(P[c]) ? P[c].slice() : [P[c]]; e.r[c] = { x: v.slice(), v: v.map(() => 0) }; } }
   const n = Math.max(1, Math.ceil(dt * 240)), h = dt / n;
@@ -260,10 +309,75 @@ export function dessinerDanseur(ctx, e, peau, encre, X, Y, Z, mir = false) {
     const [ep, co, po, bo] = J.bras[c];
     items.push({ z: (ep[2] + co[2] + bo[2]) / 3, f: () => {
       const z = (ep[2] + co[2] + bo[2]) / 3; piece('avant', co, po, m.AVANT, u * 0.076, false, z); piece('bras', ep, co, m.BRAS, u * 0.1, false, z);
-      piece('main', po, bo, m.AVANT, u * 0.056, !mir, z, 'avant');
+      const fm = J.forme[c] | 0, ob = J.objet[c] | 0;
+      if (!fm) piece('main', po, bo, m.AVANT, u * 0.056, !mir, z, 'avant'); else main(ctx, P(po), P(bo), fm, Z, m, peau);
+      if (ob) objet(ctx, P(po), P(bo), ob, Z);
     } });
   }
   items.sort((a, b) => a.z - b.z); for (const it of items) { it.f(); ctx.globalAlpha = a0; }
+  // Par-dessus tout : la crème sur sa figure, et ce qu'il ressent.
+  const [hx, hy] = P(J.tete), rt = Z * m.TETE;
+  if (J.creme > 0.02) { ctx.save(); ctx.globalAlpha = a0 * clamp(J.creme, 0, 1); ctx.fillStyle = '#fff4ea';
+    for (const [dx, dy, r] of [[0.35, 0.1, 0.55], [-0.1, -0.2, 0.5], [0.15, 0.45, 0.45], [-0.35, 0.25, 0.38], [0.55, -0.25, 0.32], [0.05, -0.55, 0.3]]) { ctx.beginPath(); ctx.arc(hx + dx * rt * e.face, hy + dy * rt, r * rt, 0, TAU); ctx.fill(); }
+    ctx.fillStyle = '#ff8fb0'; ctx.beginPath(); ctx.arc(hx + 0.2 * rt * e.face, hy - 0.5 * rt, 0.14 * rt, 0, TAU); ctx.fill(); ctx.restore(); }
+  if (J.oreille) { const ox = hx - e.face * rt * 0.55, oy = hy - rt * 0.75; ctx.save(); ctx.fillStyle = '#e8344f'; for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; ctx.beginPath(); ctx.arc(ox + Math.cos(a) * rt * 0.3, oy + Math.sin(a) * rt * 0.3, rt * 0.26, 0, TAU); ctx.fill(); } ctx.fillStyle = '#ffd34d'; ctx.beginPath(); ctx.arc(ox, oy, rt * 0.2, 0, TAU); ctx.fill(); ctx.restore(); }
+  if (J.bulle) bulle(ctx, hx, hy - rt * 2.3, J.bulle, Z, e);
+}
+// ---------- Les mains en gestes : dessinées d'un trait, de la couleur des mains du singe ----------
+// po : le poignet, bo : le creux des doigts, à l'écran. Le haut de la main est le côté opposé à la pesanteur.
+const PEAU_MAIN = '#241a15', LISERE = 'rgba(255,240,220,0.28)';
+function main(ctx, po, bo, fm, Z, m, peau) {
+  let ux = bo[0] - po[0], uy = bo[1] - po[1]; const l = Math.hypot(ux, uy) || 1; ux /= l; uy /= l;
+  // n : la perpendiculaire tournée vers le haut de l'écran ; c'est là que pointent le doigt d'honneur et le pouce levé.
+  let nx = -uy, ny = ux; if (ny > 0) { nx = -nx; ny = -ny; }
+  const H = Z * m.MAIN * 1.1, cx = po[0] + ux * H * 0.42, cy = po[1] + uy * H * 0.42, r = H * 0.34;
+  const doigt = (dx, dy, long, large) => { ctx.lineWidth = large; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + dx * long, cy + dy * long); ctx.stroke(); };
+  ctx.save(); ctx.fillStyle = ctx.strokeStyle = PEAU_MAIN; ctx.lineCap = 'round';
+  ctx.lineWidth = H * 0.2; ctx.beginPath(); ctx.moveTo(po[0], po[1]); ctx.lineTo(cx, cy); ctx.stroke();                 // le dos de la main
+  const fx = nx * 0.85 + ux * 0.35, fy = ny * 0.85 + uy * 0.35, fl = Math.hypot(fx, fy);
+  if (fm === MAIN.doigt) doigt(fx / fl, fy / fl, H * 1.15, H * 0.2);
+  else if (fm === MAIN.index) doigt(ux, uy, H * 1.2, H * 0.17);
+  else if (fm === MAIN.pouce) doigt(fx / fl, fy / fl, H * 0.8, H * 0.2);
+  else if (fm === MAIN.v) { doigt(fx / fl * 0.9 + ux * 0.4, fy / fl * 0.9 + uy * 0.4, H * 1.0, H * 0.16); doigt(fx / fl * 0.9 - ux * 0.25, fy / fl * 0.9 - uy * 0.25, H * 1.0, H * 0.16); }
+  if (fm === MAIN.rond) {                                     // le rond du pouce et de l'index, les trois autres doigts écartés
+    const ox = cx + ux * H * 0.55, oy = cy + uy * H * 0.55; ctx.lineWidth = H * 0.15; ctx.beginPath(); ctx.arc(ox, oy, H * 0.3, 0, TAU); ctx.stroke();
+    for (const a of [0.5, 0.85, 1.2]) { const dx = Math.cos(a) * nx + Math.sin(a) * ux * 0.4, dy = Math.cos(a) * ny + Math.sin(a) * uy * 0.4, dl = Math.hypot(dx, dy); doigt(dx / dl, dy / dl, H * 0.9, H * 0.13); }
+  }
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();                                                                    // le poing
+  ctx.strokeStyle = LISERE; ctx.lineWidth = Math.max(1, H * 0.05); ctx.beginPath(); ctx.arc(cx, cy, r * 0.92, Math.atan2(ny, nx) - 1, Math.atan2(ny, nx) + 1); ctx.stroke();
+  ctx.restore();
+}
+// Ce qu'il tient dans la main : une fleur, un gâteau, un téléphone.
+function objet(ctx, po, bo, ob, Z) {
+  let ux = bo[0] - po[0], uy = bo[1] - po[1]; const l = Math.hypot(ux, uy) || 1; ux /= l; uy /= l;
+  const x = bo[0] - ux * l * 0.3, y = bo[1] - uy * l * 0.3; ctx.save(); ctx.lineCap = 'round';
+  if (ob === OBJET.fleur) {
+    const tx = x + Z * 0.06 * ux, ty = y - Z * 0.36;
+    ctx.strokeStyle = '#3f8f3a'; ctx.lineWidth = Z * 0.025; ctx.beginPath(); ctx.moveTo(x, y + Z * 0.06); ctx.quadraticCurveTo(x - Z * 0.04, y - Z * 0.18, tx, ty); ctx.stroke();
+    ctx.fillStyle = '#4fa54a'; ctx.beginPath(); ctx.ellipse(x - Z * 0.05, y - Z * 0.14, Z * 0.06, Z * 0.025, -0.6, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#e8344f'; for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; ctx.beginPath(); ctx.arc(tx + Math.cos(a) * Z * 0.05, ty + Math.sin(a) * Z * 0.05, Z * 0.045, 0, TAU); ctx.fill(); }
+    ctx.fillStyle = '#ffd34d'; ctx.beginPath(); ctx.arc(tx, ty, Z * 0.035, 0, TAU); ctx.fill();
+  } else if (ob === OBJET.gateau) {
+    const w = Z * 0.36, h = Z * 0.17, bx = x - w / 2, by = y - h - Z * 0.03;
+    ctx.fillStyle = '#f2efe8'; ctx.beginPath(); ctx.ellipse(x, by + h + Z * 0.02, w * 0.62, Z * 0.03, 0, 0, TAU); ctx.fill();          // l'assiette
+    ctx.fillStyle = '#8a4b2c'; ctx.fillRect(bx, by, w, h); ctx.fillStyle = '#f7b6c8'; ctx.fillRect(bx, by + h * 0.45, w, h * 0.16);
+    ctx.fillStyle = '#fff8f0'; ctx.beginPath(); ctx.ellipse(x, by, w / 2, Z * 0.035, 0, 0, TAU); ctx.fill();
+    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(bx + w * (0.1 + i * 0.2), by + Z * 0.02, Z * 0.025, 0, Math.PI); ctx.fill(); }
+    ctx.fillStyle = '#7fc3ff'; ctx.fillRect(x - Z * 0.012, by - Z * 0.1, Z * 0.024, Z * 0.1);
+    ctx.fillStyle = '#ffcf4a'; ctx.beginPath(); ctx.ellipse(x, by - Z * 0.13, Z * 0.018, Z * 0.035, 0, 0, TAU); ctx.fill();
+  } else if (ob === OBJET.tel) {
+    ctx.translate(x, y); ctx.rotate(Math.atan2(uy, ux) + Math.PI / 2); const w = Z * 0.09, h = Z * 0.17;
+    ctx.fillStyle = '#16181c'; ctx.fillRect(-w / 2, -h, w, h); ctx.fillStyle = '#5fd0ff'; ctx.fillRect(-w / 2 + Z * 0.01, -h + Z * 0.012, w - Z * 0.02, h - Z * 0.03);
+  }
+  ctx.restore();
+}
+// Ce qu'il ressent, au-dessus de sa tête : il apparaît d'un coup, gonfle un peu, puis se pose.
+function bulle(ctx, x, y, b, Z, e) {
+  if (e.bulleVue !== b) { e.bulleVue = b; e.bulleT = e.t; }
+  const k = clamp((e.t - e.bulleT) / 0.25, 0, 1), s = Z * 0.32 * (1 + 0.35 * Math.sin(k * Math.PI)), txt = ['', '!', '?!', '♥', 'z z', '#', 'HA HA'][b] || '';
+  ctx.save(); ctx.globalAlpha *= Math.min(1, k * 3); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `700 ${s}px Jost, system-ui, sans-serif`;
+  ctx.lineWidth = s * 0.16; ctx.strokeStyle = 'rgba(2,14,18,0.75)'; ctx.fillStyle = b === BULLE.coeur ? '#ff5a7a' : b === BULLE.colere ? '#ff7a5a' : '#fff6dc';
+  ctx.strokeText(txt, x, y); ctx.fillText(txt, x, y); ctx.restore();
 }
 // La queue : un trait effilé de la couleur du pelage, puis l'image coupée en tranches le long de la chaîne (comme dans peau.js).
 function queue(ctx, Q, peau, u, m, encre) {
@@ -417,6 +531,31 @@ function roi() {
   return c;
 }
 
+// Le shuffle : le « running man » des battles, un genou qui monte pendant que l'autre pied glisse en arrière, les bras qui pompent.
+function shuffle() {
+  const c = [], HAUT = (f) => [f, 0.15, 0.24], SOL = (f) => [f, 0.17, 0], DERR = [-0.17, 0.17, 0.03];
+  for (let i = 0; i < 8; i++) {
+    const lev = i % 2 ? 'pg' : 'pd', glis = i % 2 ? 'pd' : 'pg', b1 = i % 2 ? 'md' : 'mg', b2 = i % 2 ? 'mg' : 'md';
+    c.push({ t: i, [lev]: HAUT(0.12), y: -0.01, [b1]: [0.42, -0.52, 0.2], [b2]: [-0.25, -0.76, 0.22] });
+    c.push({ t: i + 0.5, [lev]: SOL(0.07), [glis]: DERR, y: -0.085, e: 'hit' });
+    c.push({ t: i + 0.25, nod: 0.16 }, { t: i + 0.75, nod: 0.02 });
+  }
+  c.push({ t: 0, yaw: 0.8, lean: 0.18 }, { t: 4, yaw: 1.25 }, { t: 6, yaw: 0.7 }, { t: 0, qw: 0.3, qf: 2 });
+  return c;
+}
+// Le toprock : l'entrée debout d'un danseur de breakdance. Pied croisé devant, bras croisés, puis tout s'ouvre ; un coup de pied, et la pose finale.
+function toprock() {
+  const c = [], OUV = [0.05, -0.15, 0.9], CROIX_D = [0.36, -0.24, -0.3], CROIX_G = [0.36, -0.2, -0.28];
+  for (const [t, pied, sg] of [[0, 'pd', 1], [1, 'pg', -1], [4, 'pd', 1], [5, 'pg', -1]]) {
+    c.push({ t: t + 0.5, [pied]: [0.13, -0.06, 0], md: CROIX_D, mg: CROIX_G, twist: 0.3 * sg, y: -0.06, bend: 0.12, e: 'hit' });
+    c.push({ t: t + 1, [pied]: [0.02, 0.2, 0], md: OUV, mg: OUV, twist: 0, y: 0, bend: -0.1 });
+  }
+  for (const [t, pied] of [[2, 'pd'], [3, 'pg']]) { c.push({ t: t + 0.4, [pied]: [0.36, 0.12, 0.2], lean: -0.12, md: [-0.2, -0.6, 0.4], mg: [-0.2, -0.6, 0.4], e: 'hit' }, { t: t + 0.85, [pied]: [0.02, 0.2, 0], lean: 0.08, md: OUV, mg: OUV }); }
+  c.push({ t: 6.5, md: [0.24, -0.32, -0.22], mg: [0.3, -0.26, -0.3], lean: -0.05, nod: -0.15, pd: [0.02, 0.25, 0], pg: [0.02, 0.25, 0], e: 'hit', stop: true }, { t: 7, y: -0.04 }, { t: 7.25, y: 0 }, { t: 7.5, nod: -0.12, md: [0.24, -0.32, -0.22], mg: [0.3, -0.26, -0.3] });
+  c.push({ t: 0, yaw: 0.9 }, { t: 2, yaw: 0.6 }, { t: 4, yaw: 1.1 }, { t: 6.5, yaw: 0.95 });
+  return c;
+}
+
 // Ce que dit la boutique de chaque danse. vig : l'instant montré sur la vignette. elo : le rang qui la donne. prix : en euros (boutique en essai).
 // ancien : l'identifiant de la danse qu'elle remplace (v0.18), pour que les achats et les choix déjà faits restent valables.
 export const DANSES = [
@@ -432,5 +571,9 @@ export const DANSES = [
     texte: 'Les épaules qui frétillent, un salto arrière groupé, et la pose du costaud : les deux biceps et un hochement de tête.' },
   { id: 'roi', ancien: 'tornade', nom: 'Le roi de la jungle', vig: 2.7, elo: 1400, duree: 6, cles: roi(), boucle: { yaw: TAU },
     texte: 'Il se déploie en frémissant, bondit en faisant un tour complet, se reçoit le poing sur la branche, se frappe le torse et rugit.' },
+  { id: 'shuffle', nom: 'Le shuffle', vig: 1.0, prix: 1.99, duree: 4, cles: shuffle(), boucle: {},
+    texte: 'Le pas des battles : un genou qui monte, l\'autre pied qui glisse en arrière, en rythme, les bras qui pompent.' },
+  { id: 'toprock', nom: 'Le toprock', vig: 0.25, elo: 1250, duree: 4, cles: toprock(), boucle: {},
+    texte: 'L\'entrée d\'un danseur de breakdance : pieds croisés, bras qui s\'ouvrent, coups de pied, et la pose bras croisés.' },
 ];
 export const danseDe = (id) => DANSES.find((d) => d.id === id || d.ancien === id) || DANSES[0];

@@ -12,7 +12,7 @@ function toile(src, w, h, voile) {
 
 // allure : comment poser les pièces de ce singe (taille de la tête, largeur du tronc et de la queue, trait de la queue) ; voir especes.js.
 const ALLURE = { tete: 0.3, tronc: 0.74, queue: 1.5, trait: [0.1, 0.028], ombre: 0.36 };
-export function chargerPeau(nom, allure = ALLURE, v = '32') {
+export function chargerPeau(nom, allure = ALLURE, v = '33') {
   const peau = { nom, allure, pret: false, f: null, clair: [], sombre: [], poil: '#4a2a1c' };
   const image = new Promise((ok, non) => { const im = new Image(); im.onload = () => ok(im); im.onerror = non; im.src = `singes/${nom}.png?v=${v}`; });
   Promise.all([fetch(`singes/${nom}.json?v=${v}`).then((r) => r.json()), image]).then(([f, im]) => {
@@ -27,6 +27,14 @@ export function chargerPeau(nom, allure = ALLURE, v = '32') {
   return peau;
 }
 
+// Le creux de la main peinte, entre les doigts repliés et le pouce : c'est là que passe la liane quand le singe la tient (mesuré sur la planche, en part de la pièce).
+const PRISE = { x: 0.708, y: 0.71 };
+// Où tombe, à l'écran, un point (ix, iy) de l'image d'une pièce posée comme le fait piece().
+function versEcran(f, x1, y1, x2, y2, s, miroir, ix, iy) {
+  const t = Math.atan2(y2 - y1, x2 - x1), p = Math.atan2(f.by - f.ay, f.bx - f.ax), dx = ix - f.ax, dy = iy - f.ay;
+  const u = Math.cos(-p) * dx - Math.sin(-p) * dy, v = (Math.sin(-p) * dx + Math.cos(-p) * dy) * (miroir ? -1 : 1);
+  return [x1 + (Math.cos(t) * u - Math.sin(t) * v) * s, y1 + (Math.sin(t) * u + Math.cos(t) * v) * s];
+}
 // Pose une pièce : son point a sur (x1, y1), son axe a → b vers (x2, y2). e : pixels d'écran par pixel d'image (sinon l'axe est étiré d'un point à l'autre).
 function piece(ctx, jeu, f, x1, y1, x2, y2, e, large, miroir) {
   const pl = Math.hypot(f.bx - f.ax, f.by - f.ay), s = e || Math.hypot(x2 - x1, y2 - y1) / pl;
@@ -57,18 +65,22 @@ export function dessinerPeau(ctx, p, peau, X, Y, S) {
     piece(ctx, jeu, f.pied, X(l[2]), Y(l[3]), X(l[4]), Y(l[5]), s);
     piece(ctx, jeu, f.cuisse, X(p.jx), Y(p.jy), X(l[0]), Y(l[1]));
   };
-  const bras = (b, jeu) => {
+  const bras = (b, jeu, tient) => {
     const s = piece(ctx, jeu, f.avant, X(b[0]), Y(b[1]), X(b[2]), Y(b[3]));
     piece(ctx, jeu, f.bras, X(p.sx), Y(p.sy), X(b[0]), Y(b[1]));
-    piece(ctx, jeu, f.main, X(b[2]), Y(b[3]), X(b[4]), Y(b[5]), s, 1, true);            // les doigts se referment du côté de la liane
+    // Les doigts se referment du côté de la liane. Quand il la tient, la main est glissée pour que la liane passe dans son creux, sous les doigts repliés.
+    let x1 = X(b[2]), y1 = Y(b[3]), x2 = X(b[4]), y2 = Y(b[5]);
+    if (tient) { const fm = f.main, g = versEcran(fm, x1, y1, x2, y2, s, true, fm.x * 0 + fm.w * PRISE.x, fm.h * PRISE.y), dx = x2 - g[0], dy = y2 - g[1]; x1 += dx; y1 += dy; x2 += dx; y2 += dy; }
+    piece(ctx, jeu, f.main, x1, y1, x2, y2, s, 1, true);
   };
   // Du fond vers l'avant : la jambe et le bras du fond, le tronc, la jambe de devant, la tête, le bras de devant.
-  jambe(p.legs[0], D); bras(p.bras[1], D);
+  const T = p.tient || [];
+  jambe(p.legs[0], D); bras(p.bras[1], D, T[1]);
   { const x1 = X(p.sx), y1 = Y(p.sy), x2 = X(p.hx), y2 = Y(p.hy), dx = x2 - x1, dy = y2 - y1;
     piece(ctx, C, f.tronc, x1, y1, x2, y2, 0, A.tronc, dy * p.av[0] + dx * p.av[1] < 0); }    // le ventre doré du côté où il regarde
   jambe(p.legs[1], C);
   { const a = Math.atan2(p.museau[1] - p.tete[1], p.museau[0] - p.tete[0]) + 0.35, x = X(p.tete[0]), y = Y(p.tete[1]);
     piece(ctx, C, f.tete, x, y, x + Math.cos(a), y - Math.sin(a), A.tete * K * S / (f.tete.w * 0.8)); }
-  bras(p.bras[0], C);
+  bras(p.bras[0], C, T[0]);
   ctx.imageSmoothingQuality = lisse;
 }

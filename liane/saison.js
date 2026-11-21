@@ -2,7 +2,7 @@
 // À la fin, chacun reçoit les récompenses de la ligue la plus haute qu'il a atteinte pendant la saison, puis les Elo se resserrent et tout le monde repart en course.
 // Tant qu'il n'y a pas de serveur, la saison suit la date du téléphone et les récompenses sont données sur l'appareil : c'est un prototype.
 // Les récompenses d'aujourd'hui sont faites par le code (médailles, traînées). Les tenues de saison viendront s'y ajouter.
-import { profil, garder, rang, RANGS, SKINS, oublierEcarts } from './rivaux.js?v=32';
+import { profil, garder, rang, RANGS, SKINS, oublierEcarts } from './rivaux.js?v=33';
 
 const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 // Deux couleurs par mois : celle de la traînée, et sa compagne pour le dégradé.

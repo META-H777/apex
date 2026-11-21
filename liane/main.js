@@ -1,20 +1,21 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, ou en direct contre un ami, un classement Elo, des tenues.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js, les dessins de l'interface dans ui.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=32';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=32';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=32';
-import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=32';
-import { chargerPeau, dessinerPeau } from './peau.js?v=32';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=32';
-import { embleme, ICONE, DEFS, compter } from './ui.js?v=32';
-import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=32';
-import { creerScene, jouerScene, TEMPS, DANSES, danseDe, creerApercu, jouerApercu } from './fin.js?v=32';
-import { infoSaison, recompenses, bilan, ouvrirSaison, noterSaison } from './saison.js?v=32';
-import { chercher, ecartAccepte } from './file.js?v=32';
-import { noterDuel, serieJours, stats, courbe, TROPHEES, MODES, quand, membreDepuis, PAYS, drapeau } from './carriere.js?v=32';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=33';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=33';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=33';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=33';
+import { chargerPeau, dessinerPeau } from './peau.js?v=33';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=33';
+import { embleme, ICONE, DEFS, compter } from './ui.js?v=33';
+import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=33';
+import { creerScene, jouerScene, TEMPS, DANSES, danseDe, creerApercu, jouerApercu, serrerMains, sceneLibre, creerAnnonce, jouerAnnonce, dureeAnnonce } from './fin.js?v=33';
+import { ANIMS, animDe } from './gestes.js?v=33';
+import { infoSaison, recompenses, bilan, ouvrirSaison, noterSaison } from './saison.js?v=33';
+import { chercher, ecartAccepte } from './file.js?v=33';
+import { noterDuel, serieJours, stats, courbe, TROPHEES, MODES, quand, membreDepuis, PAYS, drapeau } from './carriere.js?v=33';
 
-const VERSION = 'v0.20';
+const VERSION = 'v0.21';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -91,7 +92,7 @@ function majInstaller() { $('bInstaller').hidden = installee || !tactile || !!pr
 function avance(elo) { const r = rang(elo); if (!r.suivant) return 1; const bas = r.i ? r.bas : 700; return clamp((elo - bas) / (r.suivant[0] - bas), 0.04, 1); }
 const suite = (elo) => { const r = rang(elo); return r.suivant ? r.suivant[1] + ' dans ' + (r.suivant[0] - elo) + ' pts' : 'rang le plus haut'; };
 const ordinal = (n) => n + (n === 1 ? 'er' : 'e');
-const visage = (e) => `singes/${e.id}-portrait.png?v=32`;
+const visage = (e) => `singes/${e.id}-portrait.png?v=33`;
 function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
   $('aEmb').innerHTML = embleme(r.i, 46); $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom; $('aBarre').style.width = avance(profil.elo) * 100 + '%'; $('aSuite').textContent = suite(profil.elo);
@@ -126,7 +127,7 @@ function onglet(nom, seg) {
 }
 function accueil() {
   if (lancement) return;
-  doigts.clear(); phase = 'accueil'; eveil(false); accueilT = time; finScene(); scene(hasard(), false); journal('accueil');
+  doigts.clear(); phase = 'accueil'; eveil(false); arreterAnnonce(); accueilT = time; finScene(); scene(hasard(), false); journal('accueil');
   $('fin').classList.remove('pret'); for (const id of ['fin', 'hud', 'duel']) $(id).classList.remove('on');
   $('onglets').classList.remove('cache'); taire(); onglet('jouer');
 }
@@ -145,11 +146,23 @@ function defier(source) {
   $('vLuiNom').textContent = rival.nom; $('vLuiEmb').innerHTML = embleme(rl.i, 22); $('vLuiElo').textContent = rival.elo; $('vLuiRang').textContent = rl.nom;
   $('vMise').innerHTML = cl ? `<span class="plus">Victoire +${gain(profil, rival.elo, true)}</span><span class="moins">Défaite −${Math.abs(gain(profil, rival.elo, false))}</span>` : '<span>Hors classement : ton Elo ne bouge pas</span>';
   $('duel').classList.add('on'); $('onglets').classList.add('cache'); $('accueil').classList.remove('on'); $('fin').classList.remove('on', 'pret');
-  // La course du rival se calcule pendant l'annonce : la partie démarre ensuite sans à-coup.
-  setTimeout(() => { lancer(false, source, true); vsPret = true; vsFin = setTimeout(fermerVs, 1900); }, 90);
+  // Les deux singes face à face, chacun son entrée. La course du rival se calcule pendant ce temps : la partie démarre ensuite sans à-coup.
+  const h = habitDe(rival), dur = lancerAnnonce({ corps: esp.corps, peau, encre: skinById(profil.skin).ink, entree: profil.entree }, { corps: h.e.corps, peau: sansPeau ? null : peauDe(h.e, h.x), encre: skinById(rival.skin).ink, entree: h.entree });
+  setTimeout(() => { lancer(false, source, true); vsPret = true; vsFin = setTimeout(fermerVs, Math.max(1900, dur * 1000)); }, 90);
 }
+// L'annonce animée (fin.js) : dessinée dans sa propre toile tant que l'annonce est à l'écran. Rend sa durée, en secondes.
+let annonce = null, anRaf = 0, anLast = 0;
+function lancerAnnonce(moi, lui) {
+  annonce = creerAnnonce(moi, lui); anLast = performance.now(); cancelAnimationFrame(anRaf);
+  const tour = (now) => {
+    if (!annonce) return; anRaf = requestAnimationFrame(tour); const c = $('vsVue'), [w, h] = taille(c), dt = Math.min(0.05, (now - anLast) / 1000); anLast = now; if (!w || !h) return;
+    const g = c.getContext('2d'); g.clearRect(0, 0, w, h); jouerAnnonce(g, annonce, dt, { cx: w / 2, y0: h * 0.9, Z: Math.min(h * 0.82 / 3.0, w / 4.4), W: w, H: h }, '#0b1d16');
+  };
+  anRaf = requestAnimationFrame(tour); return dureeAnnonce(moi, lui);
+}
+function arreterAnnonce() { annonce = null; cancelAnimationFrame(anRaf); }
 // En direct, l'annonce ne se passe pas d'un geste : les deux téléphones doivent partir ensemble. Elle se ferme seule, puis vient le décompte.
-function fermerVs(force) { if (!vsPret || (net && force !== true)) return; clearTimeout(vsFin); vsPret = false; lancement = false; $('duel').classList.remove('on'); $('hud').classList.add('on'); if (net) decompter(3); else if (phase === 'course' && M.idle) dire(conseil); }
+function fermerVs(force) { if (!vsPret || (net && force !== true)) return; clearTimeout(vsFin); arreterAnnonce(); vsPret = false; lancement = false; $('duel').classList.remove('on'); $('hud').classList.add('on'); if (net) decompter(3); else if (phase === 'course' && M.idle) dire(conseil); }
 // Un duel classé se joue contre un nouveau rival. Rejouer le même parcours contre le même rival est un entraînement : l'Elo ne bouge pas.
 // Le niveau d'essai et le pilote automatique ne comptent jamais. choisi : le rival et le parcours viennent d'être tirés par l'annonce.
 function lancer(rejouer, source = 'code', choisi = false) {
@@ -211,7 +224,8 @@ function finir() {
     const neufs = noterDuel({ mode, nom: rival.nom, elo: luiAvant, eloApres: Math.max(100, luiAvant + dLui), singe: h.e.id, gagne, d, avant, apres: profil.elo, dist, lui, monde: monde.id });
     if (neufs.length) $('fPlus').textContent = [$('fPlus').textContent, ...neufs.map((t) => 'Trophée : ' + t.nom)].filter(Boolean).join(' · ');
     if (direct) { net.dLui = null; net.lien.envoyer({ k: 'elo', d, apres: profil.elo }); }
-    scn = creerScene({ corps: esp.corps, peau, encre: skinById(profil.skin).ink, danse: profil.danse }, { corps: h.e.corps, peau: sansPeau ? null : peauDe(h.e, h.x), encre: skinById(rival.skin).ink, danse: direct ? net.lui.danse : h.danse }, gagne);
+    scn = creerScene({ corps: esp.corps, peau, encre: skinById(profil.skin).ink, danse: montrable(profil.danse, 'apres') }, { corps: h.e.corps, peau: sansPeau ? null : peauDe(h.e, h.x), encre: skinById(rival.skin).ink, danse: montrable(direct ? net.lui.danse : h.danse, 'apres') }, gagne);
+    mainEtat = null; majMain(true);
     eloFin = { dit: false, avant, apres: profil.elo, d, luiAvant, dLui, direct, classe };
     $('fin').classList.add('scene'); for (const id of ['sMoi', 'sLui']) $(id).classList.remove('on');
     $('sMoiEmb').innerHTML = embleme(rA.i, 24); $('sMoiElo').textContent = avant; $('sMoiD').textContent = ''; $('sMoiSuite').textContent = '';
@@ -353,13 +367,15 @@ function majProfil() {
   h += '<h3>Derniers duels</h3>' + (H.length ? '<ul class="histo">' + H.map(ligneHisto).join('') + '</ul>' : '<div class="vide">Ton historique commence à ton premier duel.</div>');
   if (profil.palmares.length) h += '<h3>Palmarès des saisons</h3><div class="medailles">' + profil.palmares.slice().reverse().map((p) => `<div class="medaille"><span class="emb">${embleme(clamp(p.rang | 0, 0, 5), 40)}</span><b>${RANGS[clamp(p.rang | 0, 0, 5)][1]}</b>${infoSaison(p.id).court}</div>`).join('') + '</div>';
   h += `<h3>Ton profil</h3><div class="prEdit"><label class="champ"><span>Pseudo</span><input id="prPseudo" maxlength="12" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="ton pseudo" value="${esc(profil.pseudo || '')}"></label>`
-    + `<label class="champ"><span>Pays</span><select id="prPays">${PAYS.map(([c, n]) => `<option value="${c}" ${c === profil.pays ? 'selected' : ''}>${drapeau(c)} ${n}</option>`).join('')}</select></label></div>`;
+    + `<label class="champ"><span>Pays</span><select id="prPays">${PAYS.map(([c, n]) => `<option value="${c}" ${c === profil.pays ? 'selected' : ''}>${drapeau(c)} ${n}</option>`).join('')}</select></label>`
+    + `<label class="champ"><span>Gestes grossiers</span><select id="prGrossier"><option value="0" ${profil.sansGrossier ? '' : 'selected'}>montrés</option><option value="1" ${profil.sansGrossier ? 'selected' : ''}>masqués (remplacés par « Chut »)</option></select></label></div>`;
   h += '<p class="pied">Prototype sans serveur : ta carrière est gardée sur ce téléphone. Avec le serveur, elle suivra ton compte d\'un appareil à l\'autre.</p>';
   $('prCorps').innerHTML = h;
 }
 $('prCorps').addEventListener('click', (e) => { const b = e.target.closest('[data-per]'); if (b) { perVue = +b.dataset.per; majProfil(); } });
 $('prCorps').addEventListener('change', (e) => {
   if (e.target.id === 'prPseudo') { profil.pseudo = propre(e.target.value); garder(); majProfil(); }
+  else if (e.target.id === 'prGrossier') { profil.sansGrossier = e.target.value === '1'; garder(); majProfil(); }
   else if (e.target.id === 'prPays') { profil.pays = PAYS.some(([c]) => c === e.target.value) ? e.target.value : ''; garder(); majProfil(); }
 });
 
@@ -446,10 +462,14 @@ function majBoutique() {
   const article = (a) => `<button class="article" data-fiche="${a.cle}"><canvas class="f-${a.x.rarete}" data-vig="${a.cle}"></canvas><em class="tag r-${a.x.rarete}">${a.x.theme || RARETES[a.x.rarete]}</em><span class="aTxt"><b>${a.x.nom}</b><small>${a.e.nom}</small>${prixDe(a.e, a.x)}</span></button>`;
   const rayon = (titre, liste) => liste.length ? `<h3>${titre}</h3><div class="grille">${liste.map(article).join('')}</div>` : '';
   h += rayon('En boutique', reste.filter((a) => a.x.prix)) + rayon('À gagner au classement', reste.filter((a) => a.x.elo));
-  // Les danses de victoire : celle que le gagnant fait à la fin d'un duel. Certaines se gagnent au classement, d'autres s'achètent.
-  h += '<h3>Danses de victoire</h3><div class="grille">' + DANSES.map((d) => `<button class="article danse" data-danse="${d.id}"><canvas data-dvig="${d.id}"></canvas><em class="tag ${d.prix ? 'r-rare' : d.elo ? 'r-epique' : 'r-commune'}">${d.prix ? 'Danse' : d.elo ? 'Classement' : 'Offerte'}</em><span class="aTxt"><b>${d.nom}</b><small>danse de victoire</small>${prixDanse(d)}</span></button>`).join('') + '</div>';
+  // Les animations : l'entrée avant le duel, le geste ou la danse du gagnant après. Certaines se gagnent au classement, d'autres s'achètent.
+  const anim = (d) => `<button class="article danse${d.type === 'geste' ? ' duo' : ''}" data-danse="${d.id}"><canvas data-dvig="${d.id}"></canvas><em class="tag ${d.prix ? 'r-rare' : d.elo ? 'r-epique' : 'r-commune'}">${d.prix ? (d.type === 'danse' ? 'Danse' : 'Geste') : d.elo ? 'Classement' : 'Offert'}</em><span class="aTxt"><b>${d.nom}</b><small>${d.type === 'danse' ? 'danse de victoire' : d.quand.length > 1 ? 'avant ou après' : d.quand[0] === 'avant' ? 'avant le duel' : 'après la victoire'}</small>${prixDanse(d)}</span></button>`;
+  const grille = (titre, liste) => `<h3>${titre}</h3><div class="grille">${liste.map(anim).join('')}</div>`;
+  h += grille('Avant le duel · ton entrée', ANIMS.filter((a) => a.quand.includes('avant')));
+  h += grille('Après la victoire · tes gestes', ANIMS.filter((a) => a.type === 'geste' && !a.quand.includes('avant')));
+  h += grille('Danses de victoire', ANIMS.filter((a) => a.type === 'danse'));
   $('bqCorps').innerHTML = h;
-  for (const c of $('bqCorps').querySelectorAll('canvas[data-dvig]')) vignetteDanse(c, danseDe(c.dataset.dvig));
+  for (const c of $('bqCorps').querySelectorAll('canvas[data-dvig]')) vignetteDanse(c, animParId(c.dataset.dvig));
   for (const c of $('bqCorps').querySelectorAll('canvas[data-vig]')) vignette(c, ...trouver(c.dataset.vig));
 }
 $('bqCorps').addEventListener('click', (e) => {
@@ -483,42 +503,53 @@ function majFiche() {
   else txt.textContent = 'Acheter · ' + euros(x.prix);
 }
 // La boutique est en essai : rien n'est encaissé. Confirmer note l'intention d'achat (sur l'appareil) et prête la tenue.
-// ---------- Les danses de victoire : à qui elles sont, leur vignette, la feuille où on les voit dansées ----------
+// ---------- Les animations : l'entrée avant le duel, le geste ou la danse du gagnant après (gestes.js, danse.js) ----------
+// profil.entree : l'entrée choisie ; profil.danse : ce que fait le gagnant (une danse ou un geste) ; profil.danses : ce qui est à soi.
+const animParId = (id) => ANIMS.find((a) => a.id === id || a.ancien === id) || null;
 if (!Array.isArray(profil.danses)) profil.danses = [];
-profil.danses = [...new Set(profil.danses.map((id) => danseDe(id).id))];        // les danses de la v0.18 ont été refaites : chacune garde sa remplaçante
-// Une danse est à soi si elle est offerte, si le classement l'a donnée (elle reste acquise ensuite), ou si elle a été prise à la boutique.
-function aDanse(d) { if (!d.elo && !d.prix) return true; if (profil.danses.includes(d.id)) return true; if (d.elo && profil.elo >= d.elo) { profil.danses.push(d.id); garder(); return true; } return false; }
-if (typeof profil.danse === 'string') profil.danse = danseDe(profil.danse).id;
-if (typeof profil.danse !== 'string' || !aDanse(danseDe(profil.danse))) profil.danse = DANSES[0].id;
-const prixDanse = (d) => aDanse(d) ? `<span class="prix ok">${ICONE.coche}${profil.danse === d.id ? 'choisie' : 'à toi'}</span>` : d.elo ? `<span class="prix">${ICONE.cadenas}rang ${rangDe(d.elo)}</span>` : `<span class="prix">${euros(d.prix)}</span>`;
-const danseur = () => ({ corps: esp.corps, peau, encre: '#0b1d16' });
-// Où poser le singe dans une image de w sur h : debout sur sa branche, en bas, avec la place de lever les bras et de sauter.
-const cadreDanse = (d, w, h) => { const Z = Math.min(h * 0.8 / 3.3, w / 2.9); return { cx: w / 2, y0: h * 0.88, Z }; };
+profil.danses = [...new Set(profil.danses.map((id) => animParId(id)?.id).filter(Boolean))];        // les danses de la v0.18 ont été refaites : chacune garde sa remplaçante
+// Une animation est à soi si elle est offerte, si le classement l'a donnée (elle reste acquise ensuite), ou si elle a été prise à la boutique.
+function aDanse(d) { if (!d) return false; if (!d.elo && !d.prix) return true; if (profil.danses.includes(d.id)) return true; if (d.elo && profil.elo >= d.elo) { profil.danses.push(d.id); garder(); return true; } return false; }
+const DEFAUT = { avant: 'check', apres: 'balance' }, CHAMP = { avant: 'entree', apres: 'danse' };
+for (const q of ['avant', 'apres']) { const a = animParId(profil[CHAMP[q]]); profil[CHAMP[q]] = a && a.quand.includes(q) && aDanse(a) ? a.id : DEFAUT[q]; }
+// Les gestes grossiers (le doigt d'honneur) peuvent être masqués dans le profil : ils sont alors remplacés par « Chut », chez soi comme chez l'adversaire.
+const montrable = (id, q) => { const a = animDe(id, q); return profil.sansGrossier && a.grossier ? 'chut' : a.id; };
+const choisiPour = (d) => [profil.entree === d.id && 'entrée', profil.danse === d.id && 'victoire'].filter(Boolean).join(' · ');
+const prixDanse = (d) => aDanse(d) ? `<span class="prix ok">${ICONE.coche}${choisiPour(d) || 'à toi'}</span>` : d.elo ? `<span class="prix">${ICONE.cadenas}rang ${rangDe(d.elo)}</span>` : `<span class="prix">${euros(d.prix)}</span>`;
+// Le partenaire des aperçus de gestes : un autre singe que le tien, dans sa robe naturelle.
+const danseur = () => { const e2 = esp.id === 'colobe' ? ESPECES[0] : ESPECES.find((e) => e.id === 'colobe'); return { corps: esp.corps, peau, encre: '#0b1d16', partenaire: { corps: e2.corps, peau: sansPeau ? null : peauDe(e2, e2.tenues[0]) } }; };
+// Où poser la scène dans une image de w sur h : sur la branche, en bas, avec la place de lever les bras et de sauter ; plus large pour deux singes.
+const cadreDanse = (d, w, h) => { const Z = d && d.type === 'geste' ? Math.min(h * 0.8 / 3.0, w / 4.2) : Math.min(h * 0.8 / 3.3, w / 2.9); return { cx: w / 2, y0: h * 0.88, Z }; };
 function vignetteDanse(c, d) {
   const [w, h] = taille(c); if (!w || !h) return; const g = c.getContext('2d'), ap = creerApercu(danseur(), d.id, Math.max(0, d.vig - 0.6));
   for (let i = 0; i < 36; i++) { g.clearRect(0, 0, w, h); jouerApercu(g, ap, 1 / 60, cadreDanse(d, w, h), '#0b1d16'); }
 }
 let dnVue = null, dnRaf = 0, dnAp = null, dnLast = 0;
 function ouvrirDanse(id) {
-  dnVue = danseDe(id); dnAp = creerApercu(danseur(), dnVue.id); $('danseFiche').hidden = false; majDanse(); dnLast = performance.now(); cancelAnimationFrame(dnRaf);
+  dnVue = animParId(id); if (!dnVue) return; dnAp = creerApercu(danseur(), dnVue.id); $('danseFiche').hidden = false; majDanse(); dnLast = performance.now(); cancelAnimationFrame(dnRaf);
   const tour = (now) => { if (!dnVue) return; dnRaf = requestAnimationFrame(tour); const c = $('dnVue'), [w, h] = taille(c), dt = Math.min(0.05, (now - dnLast) / 1000); dnLast = now; if (!w || !h) return; const g = c.getContext('2d'); g.clearRect(0, 0, w, h); jouerApercu(g, dnAp, dt, cadreDanse(dnVue, w, h), '#0b1d16'); };
   dnRaf = requestAnimationFrame(tour);
 }
 function fermerDanse() { dnVue = null; dnAp = null; cancelAnimationFrame(dnRaf); dnRaf = 0; $('danseFiche').hidden = true; }
 function majDanse() {
-  const d = dnVue, a = aDanse(d), choisie = profil.danse === d.id; $('dnNom').textContent = d.nom; $('dnTexte').textContent = d.texte + ' Le gagnant la danse à la fin du duel, devant son adversaire.';
-  $('dnBouton').textContent = choisie ? 'C\'est ta danse' : a ? 'Choisir cette danse' : d.elo ? 'Rang ' + rangDe(d.elo) + ' requis · ' + d.elo + ' Elo' : 'Acheter · ' + euros(d.prix); $('dnAction').disabled = choisie || (!a && !!d.elo);
+  const d = dnVue, a = aDanse(d), Q = d.quand, b2 = $('dnAction2');
+  $('dnNom').textContent = d.nom;
+  $('dnTexte').textContent = d.texte + (d.type === 'danse' ? ' Le gagnant la danse à la fin du duel, devant son adversaire.' : Q.length > 1 ? ' À faire en entrée, avant le duel, ou en geste de victoire.' : Q[0] === 'avant' ? ' Ton entrée, pendant l\'annonce du duel.' : ' Le geste du gagnant, à la fin du duel.') + (d.grossier && profil.sansGrossier ? ' (Tu as masqué les gestes grossiers : il est remplacé par « Chut ».)' : '');
+  const lib = (q) => profil[CHAMP[q]] === d.id ? (q === 'avant' ? 'C\'est ton entrée' : 'C\'est ton geste de victoire') : Q.length > 1 ? (q === 'avant' ? 'Pour avant le duel' : 'Pour la victoire') : 'Choisir';
+  if (!a) { $('dnBouton').textContent = d.elo ? 'Rang ' + rangDe(d.elo) + ' requis · ' + d.elo + ' Elo' : 'Acheter · ' + euros(d.prix); $('dnAction').disabled = !!d.elo; b2.hidden = true; return; }
+  $('dnBouton').textContent = lib(Q[0]); $('dnAction').disabled = profil[CHAMP[Q[0]]] === d.id;
+  b2.hidden = Q.length < 2; if (Q.length > 1) { b2.textContent = lib(Q[1]); b2.disabled = profil[CHAMP[Q[1]]] === d.id; }
 }
-function agirDanse() {
+function agirDanse(n = 0) {
   const d = dnVue; if (!d) return;
-  if (aDanse(d)) { profil.danse = d.id; garder(); majDanse(); if (ongletVu === 'boutique') majBoutique(); return; }
-  if (d.prix) { fermerDanse(); demander({ id: 'danse:' + d.id, titre: 'Danse de victoire · ' + d.nom, prix: d.prix, cles: [], danse: d.id, detail: d.texte }); }
+  if (aDanse(d)) { profil[CHAMP[d.quand[n] || d.quand[0]]] = d.id; garder(); majDanse(); if (ongletVu === 'boutique') majBoutique(); return; }
+  if (d.prix) { fermerDanse(); demander({ id: 'anim:' + d.id, titre: (d.type === 'danse' ? 'Danse de victoire' : 'Geste') + ' · ' + d.nom, prix: d.prix, cles: [], danse: d.id, quand: d.quand[0], detail: d.texte }); }
 }
 function demander(a) { achat = a; $('aTitre').textContent = a.titre; $('aPrix').textContent = euros(a.prix); $('aDetail').textContent = a.detail || ''; $('dAchat').hidden = false; }
 function rafraichir() { if (ficheOuverte()) majFiche(); if (ongletVu === 'singes') majSinges(); else if (ongletVu === 'boutique') majBoutique(); }
 function confirmer() {
   if (!achat) return;
-  if (achat.danse) { if (!profil.danses.includes(achat.danse)) profil.danses.push(achat.danse); profil.danse = achat.danse; }      // une danse achetée est prêtée pendant l'essai, et choisie tout de suite
+  if (achat.danse) { if (!profil.danses.includes(achat.danse)) profil.danses.push(achat.danse); profil[CHAMP[achat.quand || 'apres']] = achat.danse; }      // une animation achetée est prêtée pendant l'essai, et choisie tout de suite
   const D = profil.dressing; D.intentions.push({ quoi: achat.id, prix: achat.prix, quand: new Date().toISOString().slice(0, 16) });
   for (const cle of achat.cles) {
     if (!D.possede.includes(cle)) D.possede.push(cle);
@@ -535,7 +566,8 @@ function agir() {
   demander({ id: cleTenue(e, x), titre: x.nom + ' · ' + e.nom, prix: x.prix, cles: [cleTenue(e, x)],
     detail: ed ? (ed.type === 'unique' ? 'Exemplaire unique : un seul joueur au monde la portera.' : `Édition limitée à ${ed.total} exemplaires numérotés, jusqu'au ${dateFr(ed.fin)}.`) : '' });
 }
-clic('dnFermer', () => fermerDanse()); clic('dnAction', () => agirDanse());
+clic('bMain', () => proposerMain());
+clic('dnFermer', () => fermerDanse()); clic('dnAction', () => agirDanse(0)); clic('dnAction2', () => agirDanse(1));
 clic('dAction', () => agir()); clic('dFermer', () => fermerFiche()); clic('aOui', () => confirmer()); clic('aNon', () => { $('dAchat').hidden = true; achat = null; });
 // Le singe pendu à une liane, dessiné dans un canevas quelconque : la fiche (qui bouge) et les vignettes de la boutique (posées une fois).
 function pendu(g, w, h, Bq, pk, pas, temps, cadre, zoom = 1) {
@@ -604,12 +636,12 @@ choisirSinge(params.get('singe') && !sansPeau ? params.get('singe') : profil.sin
 // L'Elo se calcule sur chaque téléphone : sans serveur, rien ne l'empêche d'être truqué. C'est un prototype.
 const PROTO = 1, SILENCE = 8;                            // version des messages ; secondes sans nouvelles avant de considérer l'adversaire parti
 const propre = (v) => String(v || '').replace(/[<>&"'`\\]/g, '').trim().slice(0, 12);
-const maFiche = () => ({ nom: propre(profil.pseudo), elo: profil.elo, singe: esp.id, tenue: tenueDe(esp).id, skin: profil.skin, danse: profil.danse });
+const maFiche = () => ({ nom: propre(profil.pseudo), elo: profil.elo, singe: esp.id, tenue: tenueDe(esp).id, skin: profil.skin, danse: profil.danse, entree: profil.entree });
 // Ce que l'autre téléphone dit de son joueur n'est jamais cru sur parole : tout est remis dans les bornes du jeu.
 function lireFiche(p) {
   p = p && typeof p === 'object' ? p : {};
   const e = ESPECES.find((x) => x.id === p.singe) || ESPECES[0], x = e.tenues.find((y) => y.id === p.tenue) || e.tenues[0];
-  return { nom: propre(p.nom) || 'Ton rival', elo: clamp(Math.round(+p.elo) || 800, 100, 4000), e, x, skin: skinById(p.skin).id, danse: danseDe(p.danse).id };
+  return { nom: propre(p.nom) || 'Ton rival', elo: clamp(Math.round(+p.elo) || 800, 100, 4000), e, x, skin: skinById(p.skin).id, danse: animDe(p.danse, 'apres').id, entree: animDe(p.entree, 'avant').id };
 }
 function adopter(p) { const L = net.lui = lireFiche(p); net.peauLui = sansPeau ? null : peauDe(L.e, L.x); rival = { id: -1, nom: L.nom, elo: L.elo, skin: L.skin }; }
 // Une petite toile à part : le singe adverse y est dessiné entier, puis posé à demi transparent sur la forêt.
@@ -679,6 +711,8 @@ function recuDirect(m) {
   }
   else if (m.k === 'elo') { if (Number.isFinite(m.d)) { net.dLui = clamp(Math.round(m.d), -200, 200); if (eloFin && eloFin.direct && !eloFin.dit) eloFin.dLui = net.dLui; } }
   else if (m.k === 'encore') { net.encoreLui = true; if (net.etape === 'fin') { majRevanche(); if (net.hote && net.encoreMoi) manche(); } }
+  else if (m.k === 'main') { if (mainEtat === 'attente') { net.lien.envoyer({ k: 'mainOk' }); if (scn) serrerMains(scn, false, 0); mainEtat = 'faite'; } else if (!mainEtat) mainEtat = 'invite'; majMain(true); }
+  else if (m.k === 'mainOk') { if (mainEtat === 'attente') { if (scn) serrerMains(scn, false, 0); mainEtat = 'faite'; majMain(true); } }
   else if (m.k === 'quitte') luiParti();
 }
 // L'annonce du duel en direct : les deux joueurs, la mise, puis la forêt s'ouvre et le décompte commence.
@@ -694,7 +728,9 @@ function annoncer() {
   $('vMise').innerHTML = cl ? `<span class="plus">Victoire +${gain(profil, rival.elo, true)}</span><span class="moins">Défaite −${Math.abs(gain(profil, rival.elo, false))}</span>` : '<span>Hors classement : ton Elo ne bouge pas</span>';
   $('vRegle').textContent = 'même forêt, départ ensemble · le premier qui tombe a perdu';
   $('duel').classList.add('on'); $('onglets').classList.add('cache'); $('accueil').classList.remove('on'); $('fin').classList.remove('on', 'pret'); taire();
-  setTimeout(() => { if (!net || net.etape !== 'annonce') return; lancer(false, 'en direct', true); vsPret = true; vsFin = setTimeout(() => fermerVs(true), 2300); }, 90);
+  // Les deux téléphones jouent la même annonce (chacun se voit à gauche) : même durée des deux côtés, puis le décompte.
+  const dur = lancerAnnonce({ corps: esp.corps, peau, encre: skinById(profil.skin).ink, entree: profil.entree }, { corps: L.e.corps, peau: net.peauLui, encre: skinById(L.skin).ink, entree: L.entree });
+  setTimeout(() => { if (!net || net.etape !== 'annonce') return; lancer(false, 'en direct', true); vsPret = true; vsFin = setTimeout(() => fermerVs(true), Math.max(2300, dur * 1000 - 90)); }, 90);
 }
 // Trois, deux, un : au « Partez », les deux singes se laissent partir ensemble, que le doigt soit posé ou non.
 function decompter(n) {
@@ -757,7 +793,8 @@ addEventListener('pagehide', () => { if (net && net.luiDe) net.lien.envoyer({ k:
 // La branche où danse le gagnant est 3,8 m sous les mains : elle se pose en bas de la scène, et les compteurs d'Elo gardent leur place au-dessus des lianes.
 function cadreScene() { const w = portrait ? W : W * 0.54, h = portrait ? H * 0.6 : H, marge = (portrait ? 150 : 140) * dpr, Z = Math.min(w / 6.4, (h * 0.96 - marge) / 4.1); return { cx: portrait ? W / 2 : W * 0.27, y0: h * 0.96 - 4.1 * Z, Z, W, H }; }
 // Un rival simulé a lui aussi son espèce et, pour un sur trois, une tenue : toujours les mêmes pour un même rival.
-function habitDe(b) { const e = ESPECES[b.id % ESPECES.length], n = e.tenues.length; return { e, x: e.tenues[n > 1 && b.id % 3 === 0 ? 1 + (b.id % (n - 1)) : 0], danse: DANSES[(b.id * 5 + 2) % DANSES.length].id }; }
+const AVANT = ANIMS.filter((a) => a.quand.includes('avant')), APRES = ANIMS.filter((a) => a.quand.includes('apres'));
+function habitDe(b) { const e = ESPECES[b.id % ESPECES.length], n = e.tenues.length; return { e, x: e.tenues[n > 1 && b.id % 3 === 0 ? 1 + (b.id % (n - 1)) : 0], danse: APRES[(b.id * 5 + 2) % APRES.length].id, entree: AVANT[(b.id * 3 + 1) % AVANT.length].id }; }
 function montrerElo(c) {
   const E = eloFin; E.dit = true; if (E.direct && net && net.dLui !== null && E.classe) E.dLui = net.dLui;
   const signe = (d) => (d >= 0 ? '+' : '−') + Math.abs(d); placerElo(c);
@@ -767,8 +804,30 @@ function montrerElo(c) {
   setTimeout(() => { if (eloFin !== E) return; $('sMoiEmb').innerHTML = embleme(rang(E.apres).i, 24); $('sLuiEmb').innerHTML = embleme(rang(Math.max(100, E.luiAvant + E.dLui)).i, 24); }, 1150);
 }
 // Les compteurs se posent au-dessus des mains de chaque singe, assez haut pour que le geste de victoire ne passe pas dessus.
-function placerElo(c) { const px = dpr; $('sMoi').style.left = (c.cx - 1.55 * c.Z) / px + 'px'; $('sLui').style.left = (c.cx + 1.55 * c.Z) / px + 'px'; $('sMoi').style.top = $('sLui').style.top = Math.max(portrait ? 62 : 44, c.y0 / px - 122) + 'px'; }
-function finScene() { scn = null; eloFin = null; $('fin').classList.remove('scene'); for (const id of ['sMoi', 'sLui']) $(id).classList.remove('on', 'efface'); }
+function placerElo(c) {
+  const px = dpr, haut = Math.max(portrait ? 62 : 44, c.y0 / px - 122); $('sMoi').style.left = (c.cx - 1.55 * c.Z) / px + 'px'; $('sLui').style.left = (c.cx + 1.55 * c.Z) / px + 'px'; $('sMoi').style.top = $('sLui').style.top = haut + 'px';
+  $('bMain').style.left = c.cx / px + 'px'; $('bMain').style.top = haut + 108 + 'px';      // la poignée de main : entre les compteurs et les têtes des singes
+}
+// ---------- Le fair-play : se serrer la main à la fin. La main ne se tend que si l'autre accepte. ----------
+// mainEtat : rien, 'attente' (tu l'as proposée), 'invite' (il te la propose), 'faite', 'refus'. Un rival simulé décide selon son caractère.
+let mainEtat = null, mainVu = '';
+function majMain(force) {
+  const b = $('bMain'), vu = !!(scn && phase === 'fin' && scn.t > TEMPS.geste + 1.2 && mainEtat !== 'faite'), nom = rival ? rival.nom : '';
+  const txt = !vu ? '' : mainEtat === 'attente' ? 'Main tendue · ' + nom + ' réfléchit…' : mainEtat === 'invite' ? nom + ' te tend la main · Accepter' : mainEtat === 'refus' ? nom + ' refuse ta main' : 'Serrer la main';
+  if (!force && txt === mainVu) return; mainVu = txt; if (vu && scn) placerElo(cadreScene());
+  b.hidden = !vu; b.textContent = txt; b.disabled = mainEtat === 'attente' || mainEtat === 'refus'; b.classList.toggle('invite', mainEtat === 'invite');
+}
+function proposerMain() {
+  if (!scn || scn.main || mainEtat === 'attente' || mainEtat === 'faite' || mainEtat === 'refus') return;
+  if (net) {
+    if (mainEtat === 'invite') { net.lien.envoyer({ k: 'mainOk' }); serrerMains(scn, false, 0); mainEtat = 'faite'; }
+    else { net.lien.envoyer({ k: 'main' }); mainEtat = 'attente'; }
+    majMain(true); return;
+  }
+  mainEtat = 'attente'; majMain(true); const b = rival, s0 = scn;
+  setTimeout(() => { if (scn !== s0) return; const non = !!b && b.id % 6 === 0; serrerMains(scn, non, 0); mainEtat = non ? 'refus' : 'faite'; majMain(true); }, 1100);     // un rival sur six est mauvais perdant (ou mauvais gagnant)
+}
+function finScene() { scn = null; eloFin = null; mainEtat = null; majMain(true); $('fin').classList.remove('scene'); for (const id of ['sMoi', 'sLui']) $(id).classList.remove('on', 'efface'); }
 
 // La branche du départ : le singe y attend, la liane en main, avant de se laisser partir.
 function drawPerche() {
@@ -974,7 +1033,7 @@ function frame() {
       ctx.globalAlpha = 0.5;
       if (Mg.mode === 'swing') { ctx.strokeStyle = PAL.ink; ctx.lineWidth = S * 0.06; ctx.beginPath(); ctx.moveTo(X(Mg.ax), Y(Mg.ay)); ctx.lineTo(X(Mg.x), Y(Mg.y)); ctx.stroke(); }
       ctx.globalAlpha = 0.74; ctx.drawImage(c, Math.round(X(Mg.x) - o), Math.round(Y(Mg.y) - o));
-      if (Math.abs(Mg.x - M.x) > 1.6 || Math.abs(Mg.y - M.y) > 1.6) {            // son nom, sur une pastille sombre : lisible aussi sur le ciel clair
+      if (!scn && (Math.abs(Mg.x - M.x) > 1.6 || Math.abs(Mg.y - M.y) > 1.6)) {            // son nom, sur une pastille sombre : lisible aussi sur le ciel clair
         const px = Math.round(11 * dpr), tx = clamp(X(Mg.x), px * 4, W - px * 4), ty = Y(Mg.y) - S * 0.95; ctx.font = `500 ${px}px Jost, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         const lw = ctx.measureText(rival.nom).width + px * 1.5, lh = px * 1.9; ctx.globalAlpha = 0.62; ctx.fillStyle = 'rgb(3,22,26)'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(tx - lw / 2, ty - lh / 2, lw, lh, lh / 2); else ctx.rect(tx - lw / 2, ty - lh / 2, lw, lh); ctx.fill();
         ctx.globalAlpha = 1; ctx.fillStyle = '#fff6dc'; ctx.fillText(rival.nom, tx, ty + px * 0.06); ctx.textBaseline = 'alphabetic';
@@ -983,7 +1042,7 @@ function frame() {
     }
   } else if (phase !== 'accueil' && G) {                 // le fantôme : il porte le skin de son joueur
     etat(G, t, Mg);
-    if (!Mg.fini) {
+    if (!Mg.fini && !scn) {
       const gs = skinById(rival.skin), gp = poseSinge(Mg, Bg, dt, autour(Mg, null));
       ctx.globalAlpha = 0.42;
       if (Mg.mode === 'swing') { ctx.strokeStyle = PAL.ink; ctx.lineWidth = S * 0.06; ctx.beginPath(); ctx.moveTo(X(Mg.ax), Y(Mg.ay)); ctx.lineTo(X(Mg.x), Y(Mg.y)); ctx.stroke(); }
@@ -1079,6 +1138,7 @@ function frame() {
     const c = cadreScene(); jouerScene(ctx, scn, real * (window.LIANE.lent || 1), c, PAL.ink);          // lent : un ralenti, pour les mises au point
     if (!eloFin.dit && scn.t >= TEMPS.elo) montrerElo(c);
     if (scn.haut !== eloFin.haut) { eloFin.haut = scn.haut; $(scn.g === 0 ? 'sMoi' : 'sLui').classList.toggle('efface', scn.haut); }      // la danse passe devant le compteur du gagnant : il s'efface un instant
+    majMain();
   }
 
   // En course : la ligne du haut, de ton départ jusqu'au repère du rival. Les deux points avancent dessus.
