@@ -1,21 +1,21 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, ou en direct contre un ami, un classement Elo, des tenues.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js, les dessins de l'interface dans ui.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=33';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=33';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=33';
-import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=33';
-import { chargerPeau, dessinerPeau } from './peau.js?v=33';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=33';
-import { embleme, ICONE, DEFS, compter } from './ui.js?v=33';
-import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=33';
-import { creerScene, jouerScene, TEMPS, DANSES, danseDe, creerApercu, jouerApercu, serrerMains, sceneLibre, creerAnnonce, jouerAnnonce, dureeAnnonce } from './fin.js?v=33';
-import { ANIMS, animDe } from './gestes.js?v=33';
-import { infoSaison, recompenses, bilan, ouvrirSaison, noterSaison } from './saison.js?v=33';
-import { chercher, ecartAccepte } from './file.js?v=33';
-import { noterDuel, serieJours, stats, courbe, TROPHEES, MODES, quand, membreDepuis, PAYS, drapeau } from './carriere.js?v=33';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=34';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=34';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=34';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=34';
+import { chargerPeau, dessinerPeau } from './peau.js?v=34';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=34';
+import { embleme, ICONE, DEFS, compter } from './ui.js?v=34';
+import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=34';
+import { creerScene, jouerScene, TEMPS, DANSES, danseDe, creerApercu, jouerApercu, serrerMains, sceneLibre, creerAnnonce, jouerAnnonce, dureeAnnonce } from './fin.js?v=34';
+import { ANIMS, animDe } from './gestes.js?v=34';
+import { infoSaison, recompenses, bilan, ouvrirSaison, noterSaison } from './saison.js?v=34';
+import { chercher, ecartAccepte } from './file.js?v=34';
+import { noterDuel, serieJours, stats, courbe, TROPHEES, MODES, quand, membreDepuis, PAYS, drapeau } from './carriere.js?v=34';
 
-const VERSION = 'v0.21';
+const VERSION = 'v0.22';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -92,7 +92,7 @@ function majInstaller() { $('bInstaller').hidden = installee || !tactile || !!pr
 function avance(elo) { const r = rang(elo); if (!r.suivant) return 1; const bas = r.i ? r.bas : 700; return clamp((elo - bas) / (r.suivant[0] - bas), 0.04, 1); }
 const suite = (elo) => { const r = rang(elo); return r.suivant ? r.suivant[1] + ' dans ' + (r.suivant[0] - elo) + ' pts' : 'rang le plus haut'; };
 const ordinal = (n) => n + (n === 1 ? 'er' : 'e');
-const visage = (e) => `singes/${e.id}-portrait.png?v=33`;
+const visage = (e) => `singes/${e.id}-portrait.png?v=34`;
 function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
   $('aEmb').innerHTML = embleme(r.i, 46); $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom; $('aBarre').style.width = avance(profil.elo) * 100 + '%'; $('aSuite').textContent = suite(profil.elo);

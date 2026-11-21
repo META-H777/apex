@@ -2,10 +2,10 @@
 // puis fait sa danse de victoire pendant que l'Elo se décompte au-dessus de chacun.
 // Rien ici ne touche aux règles ni au résultat : la scène ne fait que montrer ce que le duel a décidé.
 // Les deux singes sont posés par le même calcul que pendant la course (singe.js) : on ne fait que leur dicter où sont leurs mains.
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=33';
-import { dessinerPeau } from './peau.js?v=33';
-import { DANSES, danseDe, danseur, avancer, dessinerDanseur, dessinerBranche, dessinerOmbre, sommet, atterrir, acteur as acteur3d, jouer, libre, INTRO } from './danse.js?v=33';
-import { geste, attente, D as DUO, hautEpaule, animDe, dureeGeste } from './gestes.js?v=33';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=34';
+import { dessinerPeau } from './peau.js?v=34';
+import { DANSES, danseDe, danseur, avancer, dessinerDanseur, dessinerBranche, dessinerOmbre, sommet, atterrir, acteur as acteur3d, jouer, libre, INTRO } from './danse.js?v=34';
+import { geste, attente, D as DUO, hautEpaule, animDe, dureeGeste, suiteDe } from './gestes.js?v=34';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k, TAU = Math.PI * 2;
 const lisse = (k) => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
@@ -20,7 +20,7 @@ export { DANSES, danseDe };
 const BR = -3.8;                 // le dessus de la branche, sous les mains au repos
 const acteur = (q, i, base) => ({ ...q, i, base, apres: animDe(q.danse, 'apres'), B: corps(morpho(q.corps)), M: { mode: 'swing', th: 0, om: 0, x: 0, y: 0, vx: 0, vy: 0, depart: false }, face: 1, tour: 1, rot: 0, vu: false, porte: false, corde: true, pose: null, neuf: true, R: HAUT });
 // moi, lui : { corps (les mesures de l'espèce), peau (l'atlas de la tenue, ou rien), encre (la couleur de la silhouette de secours), danse (l'identifiant de sa danse) }.
-export function creerScene(moi, lui, gagne) { return { t: 0, A: [acteur(moi, 0, -ECART), acteur(lui, 1, ECART)], g: gagne ? 0 : 1, haut: false, main: null, geste: false, flash: 0 }; }
+export function creerScene(moi, lui, gagne) { return { t: 0, A: [acteur(moi, 0, -ECART), acteur(lui, 1, ECART)], g: gagne ? 0 : 1, haut: false, main: null, geste: false }; }
 
 // Où sont les mains de chacun à l'instant t. Le gagnant : th (angle de sa liane) et R (longueur de liane au-dessus des mains).
 function gagnant(a, t) {
@@ -59,12 +59,13 @@ function lancerDanse(a, P) {
 }
 // Ce que fait chacun une fois posé : le gagnant danse (en boucle) ou attend, fier, son geste ; le perdant reste abattu.
 const boucleDe = (a, gagne) => gagne ? (a.apres.type === 'danse' ? danseur(a.B.m, a.apres.id).P : attente(a.B.m, 'fier')) : attente(a.B.m, 'defait');
-function retour(scn, a) { jouer(a.d, boucleDe(a, a === scn.A[scn.g]), null, 0.35); }
+// Après certains gestes, le gagnant garde sa pose (assis sur son trône, dos tourné) : sa boucle en part. Après la poignée de main, il revient à la boucle de tous.
+function retour(scn, a, id = null) { const s = id && a === scn.A[scn.g] && suiteDe(id); jouer(a.d, s ? attente(a.B.m, s) : boucleDe(a, a === scn.A[scn.g]), null, s ? 0.2 : 0.45); }
 // Un geste à deux : qui le fait (A), qui le reçoit (B). À la fin, chacun revient à sa boucle.
 function aDeux(scn, id, fait, recoit) {
   const x = { D: DUO, HS: (hautEpaule(fait.B.m) + hautEpaule(recoit.B.m)) / 2 }; scn.geste = true;
-  jouer(fait.d, geste(id, 'A', fait.B.m, x), () => { retour(scn, fait); scn.geste = false; });
-  jouer(recoit.d, geste(id, 'B', recoit.B.m, x), () => retour(scn, recoit));
+  jouer(fait.d, geste(id, 'A', fait.B.m, x), () => { retour(scn, fait, id); scn.geste = false; }, 0.5);
+  jouer(recoit.d, geste(id, 'B', recoit.B.m, x), () => retour(scn, recoit), 0.5);
 }
 // La poignée de main, voulue par les deux. refus : l'autre la refuse (seulement contre un rival simulé, qui a son caractère). qui : celui qui l'a proposée.
 export function serrerMains(scn, refus = false, qui = 0) { scn.main = refus ? { refus: true, qui } : { qui }; }
@@ -113,12 +114,10 @@ export function jouerScene(ctx, scn, dt, cadre, encre) {
   // La poignée de main, dès que les deux sont libres.
   if (scn.main && !scn.main.joue && scn.fait && sceneLibre(scn)) { const m = scn.main, a = scn.A[m.qui], b = scn.A[1 - m.qui]; m.joue = true; aDeux(scn, m.refus ? 'refus' : 'main', a, b); }
   scn.haut = !!g.d && BR + sommet(g.d.J) > 0.15;            // le gagnant saute si haut qu'il passe devant son compteur d'Elo
-  scn.flash = Math.max(g.d && g.d.J ? g.d.J.flash || 0 : 0, p.d && p.d.J ? p.d.J.flash || 0 : 0);
   ctx.globalAlpha = a; for (const q of scn.A) liane(ctx, q, cx, Y, Z, t);
   // La branche du dessous : elle sort de l'ombre quand le gagnant est remonté.
   { const k = lisse((t - 2.3) / 0.8); if (k > 0) dessinerBranche(ctx, (x) => cx + x * Z, (y) => Y(BR + y), Z, -W / Z, W / Z, k); }
   singe(ctx, p, cx, Y, Z, encre); singe(ctx, g, cx, Y, Z, encre);     // le perdant d'abord, le gagnant devant lui
-  if (scn.flash > 0.01) { ctx.globalAlpha = 1; ctx.fillStyle = `rgba(255,255,255,${scn.flash * 0.7})`; ctx.fillRect(0, 0, W, H); }
   ctx.globalAlpha = 1;
 }
 
@@ -128,7 +127,7 @@ const PAUSE = [0.35, 0.25, 0.45];
 export function dureeAnnonce(moi, lui) { return PAUSE[0] + dureeGeste(animDe(moi.entree, 'avant').id) + PAUSE[1] + dureeGeste(animDe(lui.entree, 'avant').id) + PAUSE[2]; }
 export function creerAnnonce(moi, lui) {
   const A = [moi, lui].map((q, i) => { const m = morpho(q.corps); return { ...q, i, m, entree: animDe(q.entree, 'avant').id, d: acteur3d(m, attente(m, 'attente')) }; });
-  return { t: 0, A, etape: 0, flash: 0 };
+  return { t: 0, A, etape: 0 };
 }
 export function jouerAnnonce(ctx, an, dt, cadre, encre) {
   const { cx, y0, Z } = cadre, t = an.t += dt, [a, b] = an.A, x = { D: DUO, HS: (hautEpaule(a.m) + hautEpaule(b.m)) / 2 };
@@ -138,7 +137,6 @@ export function jouerAnnonce(ctx, an, dt, cadre, encre) {
   for (const q of an.A) avancer(q.d, dt);
   const Y = (y) => y0 - y * Z; dessinerBranche(ctx, (v) => cx + v * Z, Y, Z, -cx / Z - 0.5, cx / Z + 0.5);
   for (const q of [b, a]) { const sg = q.i ? -1 : 1, X = (v) => cx + sg * (-DUO / 2 + v) * Z; dessinerOmbre(ctx, q.d, X, Y, Z); dessinerDanseur(ctx, q.d, q.peau, q.encre || encre, X, Y, Z, sg < 0); }
-  const fl = Math.max(a.d.J?.flash || 0, b.d.J?.flash || 0); if (fl > 0.01) { ctx.fillStyle = `rgba(255,255,255,${fl * 0.7})`; ctx.fillRect(0, 0, cadre.W || cx * 2, cadre.H || y0 * 1.2); }
 }
 
 // L'aperçu d'une animation, pour la boutique. Une danse : le singe seul sur sa branche, en boucle. Un geste : deux singes face à face,
@@ -148,7 +146,8 @@ export function creerApercu(q, id, t0 = 0) {
   if (an.type !== 'geste') { const d = danseur(morpho(q.corps), id); d.t = t0; return { t: t0, d, q, an }; }
   const m = morpho(q.corps), m2 = morpho(q.partenaire.corps), x = { D: DUO, HS: (hautEpaule(m) + hautEpaule(m2)) / 2 };
   const ap = { t: 0, q, an, duo: true, A: acteur3d(m, attente(m, 'attente')), B: acteur3d(m2, attente(m2, 'attente')), x, m, m2 };
-  const tour = () => { jouer(ap.A, geste(id, 'A', m, x), () => { ap.A.reste = {}; jouer(ap.A, attente(m, 'attente')); }); jouer(ap.B, geste(id, 'B', m2, x), () => { ap.B.reste = {}; jouer(ap.B, attente(m2, 'attente')); }); ap.fin = dureeGeste(id) + 0.9; };
+  // Un geste qui laisse le singe assis ou de dos : il le tient un instant de plus, puis revient doucement.
+  const s = suiteDe(id), tour = () => { jouer(ap.A, geste(id, 'A', m, x), () => jouer(ap.A, attente(m, s || 'attente'), null, s ? 0.2 : 0.4), 0.5); jouer(ap.B, geste(id, 'B', m2, x), () => jouer(ap.B, attente(m2, 'attente'), null, 0.4), 0.5); ap.fin = dureeGeste(id) + (s ? 1.6 : 0.9); };
   ap.tour = tour; for (let i = 0; i < 12; i++) { avancer(ap.A, 1 / 60); avancer(ap.B, 1 / 60); } tour();
   for (let u = 0; u < t0; u += 1 / 60) { avancer(ap.A, 1 / 60); avancer(ap.B, 1 / 60); ap.t += 1 / 60; }
   return ap;
@@ -162,5 +161,4 @@ export function jouerApercu(ctx, ap, dt, cadre, encre) {
   const XA = (x) => cx + (-DUO / 2 + x) * Z, XB = (x) => cx + (DUO / 2 - x) * Z;
   dessinerOmbre(ctx, ap.B, XB, Y, Z); dessinerOmbre(ctx, ap.A, XA, Y, Z);
   dessinerDanseur(ctx, ap.B, ap.q.partenaire.peau, '#22313a', XB, Y, Z, true); dessinerDanseur(ctx, ap.A, ap.q.peau, ap.q.encre || encre, XA, Y, Z);
-  const fl = Math.max(ap.A.J?.flash || 0, ap.B.J?.flash || 0); if (fl > 0.01) { ctx.fillStyle = `rgba(255,255,255,${fl * 0.6})`; ctx.fillRect(0, 0, cx * 2, y0 * 1.2); }
 }

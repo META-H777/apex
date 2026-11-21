@@ -41,16 +41,17 @@ export const NEUTRE = { x: 0, y: 0, z: 0, fx: 0, fz: 0, yaw: 0.8, lean: 0.12, ro
   md: [0.1, -0.88, 0.17], mg: [0.1, -0.88, 0.17], cd: [-0.35, -0.35, 0.85], cg: [-0.35, -0.35, 0.85], pd: [0.02, 0.17, 0], pg: [0.02, 0.17, 0],
   vol: 0, ad: [0.3, -0.6, 0.08], ag: [0.3, -0.6, 0.08], ql: 0.28, qc: 0.09, qs: 0, qw: 0.12, qf: 0.8, vib: 0,
   // Pour les gestes à deux (gestes.js) : wd, wg, une main posée en un point précis de la scène [x, y, z] en mètres (vers l'autre, vers le haut, vers nous),
-  // avec kd, kg de 0 (la main suit le corps) à 1 (elle est en ce point) ; fd, fg la forme de la main ; od, og ce qu'elle tient ;
-  // bulle : ce qu'il ressent, dessiné au-dessus de sa tête ; creme : du gâteau sur la figure ; flash : l'éclair d'une photo.
-  wd: [0, 1, 0], wg: [0, 1, 0], kd: 0, kg: 0, fd: 0, fg: 0, od: 0, og: 0, bulle: 0, creme: 0, flash: 0, oreille: 0 };
+  // avec kd, kg de 0 (la main suit le corps) à 1 (elle est en ce point) ; fd, fg la forme de la main ; od, og ce qu'elle tient.
+  // Pas de bulles au-dessus des têtes ni d'effets de dessin animé (retour de Romain, 21/11) : tout passe par le corps.
+  wd: [0, 1, 0], wg: [0, 1, 0], kd: 0, kg: 0, fd: 0, fg: 0, od: 0, og: 0 };
 const META = new Set(['t', 'e', 'arc', 'stop']);
 // Les canaux qui changent d'un coup, sans transition : une main est un poing ou ne l'est pas.
-const SAUT = new Set(['fd', 'fg', 'od', 'og', 'bulle', 'oreille']);
-const RESTE = ['creme', 'oreille'];             // ce qu'un geste laisse sur le singe jusqu'à la fin de la scène
+const SAUT = new Set(['fd', 'fg', 'od', 'og']);
+const RESTE = [];             // ce qu'un geste laisserait sur le singe jusqu'à la fin de la scène (plus rien depuis la v0.22)
 export const MAIN = { ouverte: 0, poing: 1, doigt: 2, rond: 3, index: 4, pouce: 5, v: 6 };
-export const OBJET = { rien: 0, fleur: 1, gateau: 2, tel: 3 };
-export const BULLE = { rien: 0, oh: 1, quoi: 2, coeur: 3, dort: 4, colere: 5, rire: 6 };
+// Ce qu'une main tient. La banane passe par trois états (épluchée, croquée, il ne reste que la peau) ;
+// le ruban, tenu d'une main, se tend jusqu'au boîtier du mètre tenu de l'autre.
+export const OBJET = { rien: 0, banane: 1, pelee: 2, croquee: 3, peau: 4, piece: 5, metre: 6, ruban: 7, carnet: 8, crayon: 9 };
 
 // Une danse écrite devient, pour chaque canal, une suite de clés triées. Une boucle se referme sur sa première clé
 // (plus un tour entier pour les canaux de rotation qui le demandent, dans boucle).
@@ -67,14 +68,20 @@ export function compiler(def, ferme = true) {
     if (!ferme && def.base && L[0].t > 0.36) L.unshift({ t: L[0].t - 0.3, v: b0.slice(), e: 'io', arc: 0, stop: true });
     if (L[0].t > 1e-6) L.unshift({ t: 0, v: (ferme ? z : def.base ? b0 : L[0].v).slice(), e: 'cr', arc: 0, stop: false });
     if (ferme && L[L.length - 1].t < D - 1e-6) L.push({ t: D, v: L[0].v.map((v) => v + o), e: 'cr', arc: 0, stop: false });
-    // Un geste à deux revient à la pose de base à sa fin, sauf ce qui reste après lui : la crème, la fleur à l'oreille.
-    if (!ferme && def.base && !RESTE.includes(c) && L[L.length - 1].t < D - 1e-6) L.push({ t: D, v: b0.slice(), e: 'io', arc: 0, stop: false });
+    // Un geste à deux revient à la pose de base à sa fin (sauf s'il demande à garder sa dernière pose : il s'est assis, il a tourné le dos).
+    if (!ferme && def.base && !def.garde && !RESTE.includes(c) && L[L.length - 1].t < D - 1e-6) L.push({ t: D, v: b0.slice(), e: 'io', arc: 0, stop: false });
     C[c] = { L, o };
   }
   // Les mains gardent aussi leur distance à l'épaule : entre deux clés, la main tourne autour de l'épaule au lieu de passer au ras du corps.
   for (const c of ['md', 'mg']) if (C[c]) C[c + 'r'] = { L: C[c].L.map((k) => ({ ...k, v: [Math.hypot(...k.v)] })), o: 0 };
-  return { D, C, ferme, def, base: def.base || null };
+  // Le ralenti : lent = [de, à, vitesse], en secondes du geste écrit. Entre ces deux instants, le geste est joué plus lentement ;
+  // il dure d'autant plus longtemps (D), et les deux singes d'un même geste ralentissent ensemble.
+  const lent = !ferme && def.lent ? def.lent : null, Dr = lent ? D + (lent[1] - lent[0]) * (1 / lent[2] - 1) : D;
+  return { D: Dr, Da: D, lent, C, ferme, def, base: def.base || null };
 }
+// Du temps vécu vers le temps du geste écrit.
+function ecrit(l, u) { const [a, b, f] = l, b2 = a + (b - a) / f; return u <= a ? u : u < b2 ? a + (u - a) * f : u - (b2 - b); }
+export const dureeReelle = (duree, lent) => lent ? duree + (lent[1] - lent[0]) * (1 / lent[2] - 1) : duree;
 const COURBE = { io: lisse, hit: (k) => 1 - Math.pow(1 - k, 3), out: (k) => k * k, lin: (k) => k, step: (k) => (k < 1 ? 0 : 1),
   back: (k) => { const s = 1.7; k -= 1; return 1 + k * k * ((s + 1) * k + s); } };
 // La valeur d'un canal à l'instant u.
@@ -103,13 +110,14 @@ function canal(X, c, u, D, ferme) {
 }
 function poseA(P, u) {
   const r = {}; let cycle = 0;
-  if (P.ferme) { cycle = Math.floor(u / P.D); u -= cycle * P.D; }
+  if (P.ferme) { cycle = Math.floor(u / P.D); u -= cycle * P.D; } else if (P.lent) u = ecrit(P.lent, u);
+  const D = P.Da || P.D;
   for (const c in NEUTRE) {
     const X = P.C[c]; if (!X) { r[c] = P.base && c in P.base ? P.base[c] : NEUTRE[c]; continue; }
-    const v = canal(X, c, u, P.D, P.ferme); r[c] = v.length > 1 ? v : v[0] + X.o * cycle;
+    const v = canal(X, c, u, D, P.ferme); r[c] = v.length > 1 ? v : v[0] + X.o * cycle;
   }
-  for (const c of ['md', 'mg']) if (P.C[c + 'r']) { const l = canal(P.C[c + 'r'], c, u, P.D, P.ferme)[0], v = r[c], n = Math.hypot(...v) || 1; if (n < l) r[c] = v.map((x) => x * l / n); }
-  r.pied = P.C.pied ? canal(P.C.pied, 'pied', u, P.D, P.ferme)[0] + P.C.pied.o * cycle : r.yaw;
+  for (const c of ['md', 'mg']) if (P.C[c + 'r']) { const l = canal(P.C[c + 'r'], c, u, D, P.ferme)[0], v = r[c], n = Math.hypot(...v) || 1; if (n < l) r[c] = v.map((x) => x * l / n); }
+  r.pied = P.C.pied ? canal(P.C.pied, 'pied', u, D, P.ferme)[0] + P.C.pied.o * cycle : r.yaw;
   return r;
 }
 
@@ -162,7 +170,7 @@ function squelette(m, P, tau, avant = null) {
       cible.push(ad(cible[i - 1], fo(d, m.QSEG)));
     }
   }
-  return { B, S, tete, Fc, Uc, Rc, Fh, Uh, bras, jambes, cible, Fp, Up, forme: { d: P.fd, g: P.fg }, objet: { d: P.od, g: P.og }, bulle: P.bulle, creme: P.creme, flash: P.flash, oreille: P.oreille };
+  return { B, S, tete, Fc, Uc, Rc, Fh, Uh, bras, jambes, cible, Fp, Up, forme: { d: P.fd, g: P.fg }, objet: { d: P.od, g: P.og } };
 }
 
 // ---------- Un danseur : la danse en cours, ce qui suit avec retard (mains, tête, queue) ----------
@@ -314,14 +322,13 @@ export function dessinerDanseur(ctx, e, peau, encre, X, Y, Z, mir = false) {
       if (ob) objet(ctx, P(po), P(bo), ob, Z);
     } });
   }
+  // Le ruban du mètre, tendu d'une main au boîtier tenu dans l'autre.
+  for (const [r, b] of [['d', 'g'], ['g', 'd']]) if ((J.objet[r] | 0) === OBJET.ruban && (J.objet[b] | 0) === OBJET.metre) {
+    const p1 = J.bras[r][3], p2 = J.bras[b][3];
+    items.push({ z: (p1[2] + p2[2]) / 2 + 0.01, f: () => { const [x1, y1] = P(p1), [x2, y2] = P(p2); ctx.save(); ctx.lineCap = 'butt'; ctx.strokeStyle = '#e9c23a'; ctx.lineWidth = Math.max(1.5, Z * 0.022); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.strokeStyle = 'rgba(40,30,10,0.55)'; ctx.lineWidth = Math.max(0.6, Z * 0.006); ctx.setLineDash([Z * 0.006, Z * 0.05]); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore(); } });
+  }
   items.sort((a, b) => a.z - b.z); for (const it of items) { it.f(); ctx.globalAlpha = a0; }
-  // Par-dessus tout : la crème sur sa figure, et ce qu'il ressent.
-  const [hx, hy] = P(J.tete), rt = Z * m.TETE;
-  if (J.creme > 0.02) { ctx.save(); ctx.globalAlpha = a0 * clamp(J.creme, 0, 1); ctx.fillStyle = '#fff4ea';
-    for (const [dx, dy, r] of [[0.35, 0.1, 0.55], [-0.1, -0.2, 0.5], [0.15, 0.45, 0.45], [-0.35, 0.25, 0.38], [0.55, -0.25, 0.32], [0.05, -0.55, 0.3]]) { ctx.beginPath(); ctx.arc(hx + dx * rt * e.face, hy + dy * rt, r * rt, 0, TAU); ctx.fill(); }
-    ctx.fillStyle = '#ff8fb0'; ctx.beginPath(); ctx.arc(hx + 0.2 * rt * e.face, hy - 0.5 * rt, 0.14 * rt, 0, TAU); ctx.fill(); ctx.restore(); }
-  if (J.oreille) { const ox = hx - e.face * rt * 0.55, oy = hy - rt * 0.75; ctx.save(); ctx.fillStyle = '#e8344f'; for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; ctx.beginPath(); ctx.arc(ox + Math.cos(a) * rt * 0.3, oy + Math.sin(a) * rt * 0.3, rt * 0.26, 0, TAU); ctx.fill(); } ctx.fillStyle = '#ffd34d'; ctx.beginPath(); ctx.arc(ox, oy, rt * 0.2, 0, TAU); ctx.fill(); ctx.restore(); }
-  if (J.bulle) bulle(ctx, hx, hy - rt * 2.3, J.bulle, Z, e);
 }
 // ---------- Les mains en gestes : dessinées d'un trait, de la couleur des mains du singe ----------
 // po : le poignet, bo : le creux des doigts, à l'écran. Le haut de la main est le côté opposé à la pesanteur.
@@ -347,37 +354,45 @@ function main(ctx, po, bo, fm, Z, m, peau) {
   ctx.strokeStyle = LISERE; ctx.lineWidth = Math.max(1, H * 0.05); ctx.beginPath(); ctx.arc(cx, cy, r * 0.92, Math.atan2(ny, nx) - 1, Math.atan2(ny, nx) + 1); ctx.stroke();
   ctx.restore();
 }
-// Ce qu'il tient dans la main : une fleur, un gâteau, un téléphone.
+// Ce qu'il tient dans la main, dessiné à l'échelle du monde (Z pixels par mètre), dans le sens de la main.
 function objet(ctx, po, bo, ob, Z) {
   let ux = bo[0] - po[0], uy = bo[1] - po[1]; const l = Math.hypot(ux, uy) || 1; ux /= l; uy /= l;
-  const x = bo[0] - ux * l * 0.3, y = bo[1] - uy * l * 0.3; ctx.save(); ctx.lineCap = 'round';
-  if (ob === OBJET.fleur) {
-    const tx = x + Z * 0.06 * ux, ty = y - Z * 0.36;
-    ctx.strokeStyle = '#3f8f3a'; ctx.lineWidth = Z * 0.025; ctx.beginPath(); ctx.moveTo(x, y + Z * 0.06); ctx.quadraticCurveTo(x - Z * 0.04, y - Z * 0.18, tx, ty); ctx.stroke();
-    ctx.fillStyle = '#4fa54a'; ctx.beginPath(); ctx.ellipse(x - Z * 0.05, y - Z * 0.14, Z * 0.06, Z * 0.025, -0.6, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#e8344f'; for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; ctx.beginPath(); ctx.arc(tx + Math.cos(a) * Z * 0.05, ty + Math.sin(a) * Z * 0.05, Z * 0.045, 0, TAU); ctx.fill(); }
-    ctx.fillStyle = '#ffd34d'; ctx.beginPath(); ctx.arc(tx, ty, Z * 0.035, 0, TAU); ctx.fill();
-  } else if (ob === OBJET.gateau) {
-    const w = Z * 0.36, h = Z * 0.17, bx = x - w / 2, by = y - h - Z * 0.03;
-    ctx.fillStyle = '#f2efe8'; ctx.beginPath(); ctx.ellipse(x, by + h + Z * 0.02, w * 0.62, Z * 0.03, 0, 0, TAU); ctx.fill();          // l'assiette
-    ctx.fillStyle = '#8a4b2c'; ctx.fillRect(bx, by, w, h); ctx.fillStyle = '#f7b6c8'; ctx.fillRect(bx, by + h * 0.45, w, h * 0.16);
-    ctx.fillStyle = '#fff8f0'; ctx.beginPath(); ctx.ellipse(x, by, w / 2, Z * 0.035, 0, 0, TAU); ctx.fill();
-    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(bx + w * (0.1 + i * 0.2), by + Z * 0.02, Z * 0.025, 0, Math.PI); ctx.fill(); }
-    ctx.fillStyle = '#7fc3ff'; ctx.fillRect(x - Z * 0.012, by - Z * 0.1, Z * 0.024, Z * 0.1);
-    ctx.fillStyle = '#ffcf4a'; ctx.beginPath(); ctx.ellipse(x, by - Z * 0.13, Z * 0.018, Z * 0.035, 0, 0, TAU); ctx.fill();
-  } else if (ob === OBJET.tel) {
-    ctx.translate(x, y); ctx.rotate(Math.atan2(uy, ux) + Math.PI / 2); const w = Z * 0.09, h = Z * 0.17;
-    ctx.fillStyle = '#16181c'; ctx.fillRect(-w / 2, -h, w, h); ctx.fillStyle = '#5fd0ff'; ctx.fillRect(-w / 2 + Z * 0.01, -h + Z * 0.012, w - Z * 0.02, h - Z * 0.03);
+  const x = bo[0] - ux * l * 0.3, y = bo[1] - uy * l * 0.3; ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // n : la perpendiculaire à la main tournée vers le haut de l'écran. La banane se tient debout dans le poing.
+  let nx = -uy, ny = ux; if (ny > 0) { nx = -nx; ny = -ny; }
+  const haut = (k, d = 0) => [x + nx * Z * k + ux * Z * d, y + ny * Z * k + uy * Z * d];
+  if (ob >= OBJET.banane && ob <= OBJET.peau) {
+    const long = ob === OBJET.banane ? 0.2 : ob === OBJET.pelee ? 0.17 : ob === OBJET.croquee ? 0.09 : 0;
+    if (long) {           // le fruit (ou ce qu'il en reste), légèrement courbé
+      const [x1, y1] = haut(long, 0.035), [xc, yc] = haut(long * 0.55, -0.01);
+      ctx.strokeStyle = ob === OBJET.banane ? '#e8bd2c' : '#f1e3b2'; ctx.lineWidth = Z * (ob === OBJET.banane ? 0.05 : 0.04);
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(xc, yc, x1, y1); ctx.stroke();
+      if (ob === OBJET.banane) { ctx.strokeStyle = '#4a3214'; ctx.lineWidth = Z * 0.02; const [x2, y2] = haut(long + 0.02, 0.04); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+      else if (ob === OBJET.croquee) { ctx.fillStyle = '#e7d39a'; ctx.beginPath(); ctx.arc(x1, y1, Z * 0.02, 0, Math.PI * 2); ctx.fill(); }
+    }
+    if (ob !== OBJET.banane) {          // les trois lanières de la peau, qui retombent autour de la main
+      ctx.strokeStyle = '#d9ab25'; ctx.lineWidth = Z * 0.026;
+      for (const s of [-1, 0.15, 1]) { const [x0, y0] = haut(0.05, s * 0.012), [xc, yc] = haut(0.1, s * 0.05), [x2, y2] = haut(-0.02, s * 0.085); ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(xc, yc, x2, y2); ctx.stroke(); }
+      ctx.strokeStyle = '#4a3214'; ctx.lineWidth = Z * 0.014; const [xa, ya] = haut(-0.02, 0), [xb, yb] = haut(-0.05, 0); ctx.beginPath(); ctx.moveTo(xa, ya); ctx.lineTo(xb, yb); ctx.stroke();
+    }
+  } else if (ob === OBJET.piece) {
+    const [cx, cy] = haut(0.035); ctx.fillStyle = '#d9a531'; ctx.beginPath(); ctx.arc(cx, cy, Z * 0.034, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ffe08a'; ctx.lineWidth = Math.max(1, Z * 0.008); ctx.beginPath(); ctx.arc(cx, cy, Z * 0.024, 0, Math.PI * 2); ctx.stroke();
+  } else if (ob === OBJET.metre) {
+    const w = Z * 0.1; ctx.translate(x, y); ctx.rotate(Math.atan2(uy, ux));
+    ctx.fillStyle = '#e9c23a'; ctx.beginPath(); ctx.roundRect(-w * 0.5, -w * 0.5, w, w, w * 0.22); ctx.fill();
+    ctx.fillStyle = '#1d1a16'; ctx.beginPath(); ctx.roundRect(-w * 0.5, w * 0.12, w, w * 0.38, [0, 0, w * 0.22, w * 0.22]); ctx.fill();
+    ctx.fillStyle = '#1d1a16'; ctx.beginPath(); ctx.arc(0, -w * 0.1, w * 0.14, 0, Math.PI * 2); ctx.fill();
+  } else if (ob === OBJET.carnet) {
+    const w = Z * 0.1, h = Z * 0.14; ctx.translate(x, y); ctx.rotate(Math.atan2(uy, ux) + Math.PI / 2);
+    ctx.fillStyle = '#efe6d0'; ctx.fillRect(-w / 2 + Z * 0.006, -h - Z * 0.004, w, h); ctx.fillStyle = '#26211c'; ctx.fillRect(-w / 2, -h, w, h);
+    ctx.fillStyle = '#9b7b3d'; ctx.fillRect(-w / 2 + w * 0.72, -h, w * 0.08, h);
+  } else if (ob === OBJET.crayon) {
+    const [x1, y1] = [x + ux * Z * 0.09, y + uy * Z * 0.09], [x0, y0] = [x - ux * Z * 0.05, y - uy * Z * 0.05];
+    ctx.strokeStyle = '#2b2b2b'; ctx.lineWidth = Z * 0.016; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.strokeStyle = '#c8a24a'; ctx.lineWidth = Z * 0.014; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x + ux * Z * 0.07, y + uy * Z * 0.07); ctx.stroke();
   }
   ctx.restore();
-}
-// Ce qu'il ressent, au-dessus de sa tête : il apparaît d'un coup, gonfle un peu, puis se pose.
-function bulle(ctx, x, y, b, Z, e) {
-  if (e.bulleVue !== b) { e.bulleVue = b; e.bulleT = e.t; }
-  const k = clamp((e.t - e.bulleT) / 0.25, 0, 1), s = Z * 0.32 * (1 + 0.35 * Math.sin(k * Math.PI)), txt = ['', '!', '?!', '♥', 'z z', '#', 'HA HA'][b] || '';
-  ctx.save(); ctx.globalAlpha *= Math.min(1, k * 3); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `700 ${s}px Jost, system-ui, sans-serif`;
-  ctx.lineWidth = s * 0.16; ctx.strokeStyle = 'rgba(2,14,18,0.75)'; ctx.fillStyle = b === BULLE.coeur ? '#ff5a7a' : b === BULLE.colere ? '#ff7a5a' : '#fff6dc';
-  ctx.strokeText(txt, x, y); ctx.fillText(txt, x, y); ctx.restore();
 }
 // La queue : un trait effilé de la couleur du pelage, puis l'image coupée en tranches le long de la chaîne (comme dans peau.js).
 function queue(ctx, Q, peau, u, m, encre) {
