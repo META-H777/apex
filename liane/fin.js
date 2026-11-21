@@ -2,8 +2,9 @@
 // puis fait sa danse de victoire pendant que l'Elo se décompte au-dessus de chacun.
 // Rien ici ne touche aux règles ni au résultat : la scène ne fait que montrer ce que le duel a décidé.
 // Les deux singes sont posés par le même calcul que pendant la course (singe.js) : on ne fait que leur dicter où sont leurs mains.
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=30';
-import { dessinerPeau } from './peau.js?v=30';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=31';
+import { dessinerPeau } from './peau.js?v=31';
+import { DANSES, danseDe, danseur, avancer, dessinerDanseur, dessinerBranche, dessinerOmbre, sommet } from './danse.js?v=31';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k, TAU = Math.PI * 2;
 const lisse = (k) => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
@@ -11,36 +12,10 @@ const ECART = 1.55, HAUT = 4, SOUS = 1.7;      // demi-distance entre les deux l
 // Le déroulé, en secondes : la plongée du gagnant, la remontée à deux, l'élan, le lâcher, la saisie du perdant, l'Elo, la danse.
 export const TEMPS = { plonge: [0.15, 0.95], monte: [1.3, 2.2], lache: 2.55, saisie: 2.95, elo: 3.3, geste: 4.5 };
 
-// ---------- Les danses de victoire ----------
-// Toutes sont des chorégraphies d'origine, faites pour un singe pendu à une liane. Une danse dit, à chaque instant u de sa boucle :
-// th : de combien la liane se balance ; R : de combien il monte (négatif) ou descend le long de la liane ;
-// tour : il pivote sur lui-même (1 de face, 0 de profil, -1 retourné) ; rot : tout le corps tourne autour des mains (en radians ; pi : la tête en bas, les pieds au ciel).
-// haut : le corps passe au-dessus des mains, il faut de la place. vig : l'instant de la boucle montré sur la vignette de la boutique.
-// elo : le seuil de classement qui la donne. prix : son prix en euros (boutique en essai). Ni l'un ni l'autre : elle est à tout le monde.
-export const DANSES = [
-  { id: 'toupie', nom: 'La toupie', vig: 2.5, duree: 3.4, texte: 'Deux grands balancers, puis deux tours sur lui-même en grimpant.',
-    pas: (u) => u < 1.6 ? { th: 0.34 * Math.sin(TAU * u / 0.8) * lisse((1.6 - u) / 0.15) }
-      : u < 2.3 ? { R: -0.45 * lisse((u - 1.6) / 0.7), tour: Math.cos(TAU * 2 * lisse((u - 1.6) / 0.7)) }
-      : u < 2.8 ? { R: -0.45 - 0.08 * Math.sin(TAU * (u - 2.3) / 0.25) } : { R: -0.45 * (1 - lisse((u - 2.8) / 0.6)) } },
-  { id: 'metronome', nom: 'Le métronome', vig: 0.45, elo: 950, duree: 3.0, texte: 'Gauche, droite, gauche, droite : sec, en rythme, et une pirouette pour finir la mesure.',
-    pas: (u) => { const s = Math.sin(TAU * u / 0.6), sec = Math.sign(s) * Math.pow(Math.abs(s), 0.62);
-      return u < 2.4 ? { th: 0.3 * sec * lisse((2.4 - u) / 0.12), R: -0.14 * Math.abs(Math.sin(TAU * u / 0.6)) } : { tour: Math.cos(TAU * lisse((u - 2.4) / 0.6)), R: -0.2 * Math.sin(Math.PI * (u - 2.4) / 0.6) }; } },
-  { id: 'drapeau', nom: 'Le drapeau', haut: true, vig: 1.0, elo: 1100, duree: 4.2, texte: 'Il se met à l\'horizontale, raide comme un drapeau, d\'un côté puis de l\'autre.',
-    pas: (u) => { const tremble = 0.025 * Math.sin(u * 31);
-      return u < 0.5 ? { rot: 1.45 * lisse(u / 0.5) } : u < 1.6 ? { rot: 1.45 + tremble } : u < 2.2 ? { rot: lerp(1.45, -1.45, lisse((u - 1.6) / 0.6)) }
-        : u < 3.3 ? { rot: -1.45 + tremble } : u < 3.8 ? { rot: -1.45 * (1 - lisse((u - 3.3) / 0.5)) } : { R: -0.12 * Math.sin(TAU * (u - 3.8) / 0.4) }; } },
-  { id: 'poirier', nom: 'Le poirier', haut: true, vig: 1.5, prix: 1.99, duree: 4.4, texte: 'La tête en bas, les pieds au ciel, il se dandine sur ses mains, puis finit son tour.',
-    pas: (u) => u < 0.6 ? { rot: Math.PI * lisse(u / 0.6) } : u < 2.4 ? { rot: Math.PI + 0.2 * Math.sin(TAU * (u - 0.6) / 0.45), R: 0.1 * Math.abs(Math.sin(TAU * (u - 0.6) / 0.45)) }
-      : u < 3.0 ? { rot: Math.PI + Math.PI * lisse((u - 2.4) / 0.6) } : u < 3.7 ? { tour: Math.cos(TAU * lisse((u - 3.0) / 0.7)) } : { th: 0.12 * Math.sin(TAU * (u - 3.7) / 0.7) } },
-  { id: 'soleil', nom: 'Le grand soleil', haut: true, vig: 1.2, prix: 2.99, duree: 4.0, texte: 'Trois tours complets autour de ses mains, bras tendus, comme à la barre fixe.',
-    pas: (u) => u < 0.45 ? { th: -0.26 * Math.sin(Math.PI * u / 0.45) } : u < 2.65 ? { rot: TAU * 3 * lisse((u - 0.45) / 2.2), R: 0.15 * lisse((u - 0.45) / 0.3) }
-      : u < 3.4 ? { th: 0.3 * Math.sin(TAU * (u - 2.65) / 0.75) * (1 - (u - 2.65) / 0.75), R: 0.15 * (1 - lisse((u - 2.65) / 0.4)) } : { R: -0.15 * Math.sin(Math.PI * (u - 3.4) / 0.6) } },
-  { id: 'tornade', nom: 'La tornade', vig: 1.35, elo: 1400, duree: 3.6, texte: 'Cinq tours sur lui-même en montant le long de la liane, le corps qui tangue, et il se laisse retomber.',
-    pas: (u) => u < 2.4 ? { tour: Math.cos(TAU * 5 * lisse(u / 2.4)), R: -0.95 * Math.sin(Math.PI * lisse(u / 2.4) * 0.5), rot: 0.22 * Math.sin(TAU * u / 0.55) * lisse((2.4 - u) / 0.25), th: 0.1 * Math.sin(TAU * u / 0.5) * lisse((2.4 - u) / 0.25) }
-      : u < 2.9 ? { R: -0.95 * (1 - lisse((u - 2.4) / 0.5)) + 0.2 * Math.sin(Math.PI * (u - 2.4) / 0.5) } : { th: 0.3 * Math.sin(TAU * (u - 2.9) / 0.7) * (1 - (u - 2.9) / 0.7) } },
-];
-export const danseDe = (id) => DANSES.find((d) => d.id === id) || DANSES[0];
-
+// ---------- Les danses de victoire : danse.js ----------
+// À l'instant du geste, le gagnant lâche sa liane, se reçoit sur la branche du dessous et danse, debout, avec son squelette en trois dimensions.
+export { DANSES, danseDe };
+const BR = -3.8;                 // le dessus de la branche, sous les mains au repos
 const acteur = (q, i, base) => ({ ...q, i, base, danse: danseDe(q.danse), B: corps(morpho(q.corps)), M: { mode: 'swing', th: 0, om: 0, x: 0, y: 0, vx: 0, vy: 0, depart: false }, face: 1, tour: 1, rot: 0, vu: false, porte: false, corde: true, pose: null, neuf: true, R: HAUT });
 // moi, lui : { corps (les mesures de l'espèce), peau (l'atlas de la tenue, ou rien), encre (la couleur de la silhouette de secours), danse (l'identifiant de sa danse) }.
 export function creerScene(moi, lui, gagne) { return { t: 0, A: [acteur(moi, 0, -ECART), acteur(lui, 1, ECART)], g: gagne ? 0 : 1, haut: false }; }
@@ -52,10 +27,6 @@ function gagnant(a, t) {
   else if (t < T.monte[1]) { const k = (t - T.monte[0]) / (T.monte[1] - T.monte[0]); R = lerp(9.8, HAUT, 1 - Math.pow(1 - k, 2.2)); th = 0.05 * Math.sin(t * 7); }      // il remonte, le perdant pendu à son pied
   else if (t < T.lache) th = 0.3 * lisse((t - T.monte[1]) / (T.lache - T.monte[1]));                               // il prend son élan vers l'autre liane
   else th = 0.3 * Math.cos(TAU * (t - T.lache) / 1.1) * Math.exp(-(t - T.lache) * 1.6);                            // il revient, et le balancement s'éteint
-  if (t >= T.geste) {                           // sa danse de victoire, en boucle
-    const d = a.danse, p = d.pas((t - T.geste) % d.duree), entre = lisse((t - T.geste) / 0.35);
-    th += (p.th || 0) * entre; R += (p.R || 0) * entre; a.tour = lerp(1, p.tour ?? 1, entre); a.rot = (p.rot || 0) * entre;
-  }
   a.M.mode = 'swing'; a.th = th; a.R = R; a.x = Math.sin(th) * R; a.y = HAUT - Math.cos(th) * R; a.porte = false; a.corde = true; a.face = 1;
 }
 // Le perdant : pendu au pied du gagnant, puis lâché vers sa liane, qu'il saisit ; il s'y balance, se retourne, et reste là.
@@ -77,6 +48,13 @@ function perdant(a, t, g) {
   a.th = -0.3 * Math.sin(TAU * u / 1.15) * Math.exp(-u * 1.4) + 0.035 * Math.sin(t * 1.3);
   a.x = Math.sin(a.th) * a.R; a.y = HAUT - Math.cos(a.th) * a.R;
 }
+// Le gagnant lâche sa liane : la danse part de sa pose exacte, ramenée dans le repère de la branche (l'origine sous son bassin).
+function lancerDanse(a) {
+  // Il se reçoit sous sa liane, un pas plus près de l'autre : son bassin, en arrière des mains, revient au-dessus de ses pieds pendant la chute.
+  const p = a.pose, ox = a.x + 0.3, X = (x) => x - ox, Y = (y) => y - BR, l6 = (l) => [X(l[0]), Y(l[1]), X(l[2]), Y(l[3]), X(l[4]), Y(l[5])];
+  const depuis = { sx: X(p.sx), sy: Y(p.sy), hx: X(p.hx), hy: Y(p.hy), bras: p.bras.map(l6), legs: p.legs.map(l6), queue: p.queue.map((q) => ({ x: X(q.x), y: Y(q.y) })), qui: a.B.qui };
+  a.ox = ox; a.d = danseur(a.B.m, a.danse.id, depuis); avancer(a.d, 0);
+}
 // Le corps suit les mains : même calcul que pendant la course.
 function poser(q, dt) {
   const M = q.M;
@@ -86,7 +64,7 @@ function poser(q, dt) {
 }
 // Une liane : elle pend du haut de l'écran, passe par les mains, et continue un peu dessous. Claire avec un cœur foncé : sur le voile sombre, une liane noire ne se verrait pas.
 function liane(ctx, q, cx, Y, Z, t) {
-  const x0 = cx + q.base * Z, sens = q.i ? -1 : 1, tient = q.corde && q.vu && q.M.mode === 'swing' && !q.porte;
+  const x0 = cx + q.base * Z, sens = q.i ? -1 : 1, tient = q.corde && q.vu && q.M.mode === 'swing' && !q.porte && !q.d;
   const mx = tient ? x0 + q.x * sens * (q.face < 0 ? -1 : 1) : x0 + Math.sin(t * 0.9 + q.i * 2) * 0.05 * Z, my = tient ? Y(q.y) : Y(-0.2);
   const bx = mx + (mx - x0) * (SOUS / HAUT) * 0.7 + Math.sin(t * 1.7 + q.i) * 0.04 * Z * sens, by = my + SOUS * Z;
   const trace = () => { ctx.beginPath(); ctx.moveTo(x0, Y(HAUT)); ctx.lineTo(mx, my); ctx.quadraticCurveTo(lerp(mx, bx, 0.5), my + SOUS * Z * 0.55, bx, by); ctx.stroke(); };
@@ -94,6 +72,10 @@ function liane(ctx, q, cx, Y, Z, t) {
 }
 // Un singe : retourné s'il regarde vers la gauche, aplati quand il pivote sur lui-même, tourné autour de ses mains quand la danse le demande.
 function singe(ctx, q, cx, Y, Z, encre) {
+  if (q.d) {
+    const sg = q.i ? -1 : 1, Xd = (x) => cx + (q.base + sg * (q.ox + x)) * Z, Yd = (y) => Y(BR + y);
+    dessinerOmbre(ctx, q.d, Xd, Yd, Z); dessinerDanseur(ctx, q.d, q.peau, q.encre || encre, Xd, Yd, Z, sg < 0); return;
+  }
   if (!q.vu || !q.pose) return;
   const s = (q.i ? -1 : 1) * q.face * q.tour, X = (x) => x * Z;
   ctx.save(); ctx.translate(cx + q.base * Z, 0); ctx.scale(Math.abs(s) < 0.04 ? 0.04 * (s < 0 ? -1 : 1) : s, 1);
@@ -109,16 +91,19 @@ export function jouerScene(ctx, scn, dt, cadre, encre) {
   const a = lisse(t / 0.45), v = ctx.createRadialGradient(cx, y0 + Z * 1.1, Z * 0.6, cx, y0 + Z * 1.1, Math.max(W, H) * 0.75);
   v.addColorStop(0, `rgba(2,16,20,${0.3 * a})`); v.addColorStop(0.5, `rgba(2,16,20,${0.72 * a})`); v.addColorStop(1, `rgba(2,14,18,${0.9 * a})`);
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
-  gagnant(g, t); perdant(p, t, g); poser(g, dt); poser(p, dt);
-  scn.haut = Math.abs(Math.sin(g.rot / 2)) > 0.3;          // le gagnant a le corps au-dessus de ses mains : il passe devant son compteur d'Elo
+  if (!g.d) { gagnant(g, t); poser(g, dt); if (t >= TEMPS.geste) lancerDanse(g); } else avancer(g.d, dt);
+  perdant(p, t, g); poser(p, dt);
+  scn.haut = !!g.d && BR + sommet(g.d.J) > 0.15;            // le gagnant saute si haut qu'il passe devant son compteur d'Elo
   ctx.globalAlpha = a; for (const q of scn.A) liane(ctx, q, cx, Y, Z, t);
+  // La branche du dessous : elle sort de l'ombre quand le gagnant est remonté.
+  { const k = lisse((t - 2.3) / 0.8); if (k > 0) dessinerBranche(ctx, (x) => cx + x * Z, (y) => Y(BR + y), Z, -W / Z, W / Z, k); }
   singe(ctx, p, cx, Y, Z, encre); singe(ctx, g, cx, Y, Z, encre);     // le perdant d'abord, le gagnant devant lui
   ctx.globalAlpha = 1;
 }
 
-// L'aperçu d'une danse, pour la boutique : un singe seul sur sa liane, qui la danse en boucle. cadre : { cx, y0, Z }.
-export function creerApercu(q, id) { const a = acteur({ ...q, danse: id }, 0, 0); a.vu = true; return { t: 0, a }; }
+// L'aperçu d'une danse, pour la boutique : le singe seul, debout sur sa branche, qui la danse en boucle. cadre : { cx, y0 (le dessus de la branche), Z }.
+export function creerApercu(q, id, t0 = 0) { const d = danseur(morpho(q.corps), id); d.t = t0; return { t: t0, d, q }; }
 export function jouerApercu(ctx, ap, dt, cadre, encre) {
-  const { cx, y0, Z } = cadre, a = ap.a, Y = (y) => y0 - y * Z; ap.t += dt;
-  gagnant(a, TEMPS.geste + ap.t); poser(a, dt); liane(ctx, a, cx, Y, Z, ap.t); singe(ctx, a, cx, Y, Z, encre);
+  const { cx, y0, Z } = cadre, X = (x) => cx + x * Z, Y = (y) => y0 - y * Z; ap.t += dt; avancer(ap.d, dt);
+  dessinerBranche(ctx, X, Y, Z, -cx / Z - 0.3, cx / Z + 0.3); dessinerOmbre(ctx, ap.d, X, Y, Z); dessinerDanseur(ctx, ap.d, ap.q.peau, ap.q.encre || encre, X, Y, Z);
 }
