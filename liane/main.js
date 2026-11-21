@@ -1,18 +1,20 @@
 // LIANE — le jeu : un duel de distance contre le fantôme d'un rival, ou en direct contre un ami, un classement Elo, des tenues.
 // Tenir pour saisir la liane, lâcher pour s'élancer. On tombe, c'est fini. La nuit rattrape ceux qui traînent.
 // Les règles du mouvement sont dans jeu.js, le décor dans decor.js, les rivaux dans rivaux.js, les dessins de l'interface dans ui.js.
-import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=31';
-import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=31';
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=31';
-import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=31';
-import { chargerPeau, dessinerPeau } from './peau.js?v=31';
-import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=31';
-import { embleme, ICONE, DEFS, compter } from './ui.js?v=31';
-import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=31';
-import { creerScene, jouerScene, TEMPS, DANSES, danseDe, creerApercu, jouerApercu } from './fin.js?v=31';
-import { infoSaison, recompenses, bilan, ouvrirSaison, noterSaison } from './saison.js?v=31';
+import { Jeu, CFG, MONDES, rnd, pilote } from './jeu.js?v=32';
+import { buildDecor, drawTile, PAL, setPalette } from './decor.js?v=32';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=32';
+import { ESPECES, COMPETENCES, espece, RARETES, PACKS, cleTenue, euros } from './especes.js?v=32';
+import { chargerPeau, dessinerPeau } from './peau.js?v=32';
+import { PARCOURS, SKINS, skinById, rang, fantome, etat, profil, garder, gain, elo, bouger, acquerir, possede, adversaire, classement, RANGS } from './rivaux.js?v=32';
+import { embleme, ICONE, DEFS, compter } from './ui.js?v=32';
+import { liaison, nouveauCode, nettoyerCode } from './reseau.js?v=32';
+import { creerScene, jouerScene, TEMPS, DANSES, danseDe, creerApercu, jouerApercu } from './fin.js?v=32';
+import { infoSaison, recompenses, bilan, ouvrirSaison, noterSaison } from './saison.js?v=32';
+import { chercher, ecartAccepte } from './file.js?v=32';
+import { noterDuel, serieJours, stats, courbe, TROPHEES, MODES, quand, membreDepuis, PAYS, drapeau } from './carriere.js?v=32';
 
-const VERSION = 'v0.19';
+const VERSION = 'v0.20';
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -89,7 +91,7 @@ function majInstaller() { $('bInstaller').hidden = installee || !tactile || !!pr
 function avance(elo) { const r = rang(elo); if (!r.suivant) return 1; const bas = r.i ? r.bas : 700; return clamp((elo - bas) / (r.suivant[0] - bas), 0.04, 1); }
 const suite = (elo) => { const r = rang(elo); return r.suivant ? r.suivant[1] + ' dans ' + (r.suivant[0] - elo) + ' pts' : 'rang le plus haut'; };
 const ordinal = (n) => n + (n === 1 ? 'er' : 'e');
-const visage = (e) => `singes/${e.id}-portrait.png?v=31`;
+const visage = (e) => `singes/${e.id}-portrait.png?v=32`;
 function majAccueil() {
   const r = rang(profil.elo), cl = classement(), pos = cl.findIndex((c) => c.moi) + 1;
   $('aEmb').innerHTML = embleme(r.i, 46); $('aElo').textContent = profil.elo; $('aRang').textContent = r.nom; $('aBarre').style.width = avance(profil.elo) * 100 + '%'; $('aSuite').textContent = suite(profil.elo);
@@ -100,7 +102,8 @@ function majAccueil() {
   $('mPoints').innerHTML = MONDES.map((m, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
   const tn = tenueDe(esp); $('aSingeImg').src = visage(esp); $('aSingeNom').textContent = esp.nom; $('aSingeTenue').textContent = tn.id === 'naturel' ? 'ton singe' : tn.nom;
   { const s = infoSaison(profil.saison.id); $('sNom').textContent = s.nom; $('sReste').innerHTML = (s.jours > 1 ? 'encore ' + s.jours + ' jours' : s.jours === 1 ? 'se termine demain' : 'se termine ce soir') + ' · récompenses'; }
-  $('aMise').textContent = monde.essai ? 'entraînement · hors classement' : 'duel classé · ' + monde.nom;
+  $('aMise').textContent = monde.essai ? 'contre un vrai joueur · hors classement' : 'duel classé · contre un vrai joueur';
+  $('aRivalMise').textContent = monde.essai ? 'entraînement' : 'classé · rival simulé';
   majInstaller();
 }
 function changerMonde(pas) {
@@ -109,11 +112,11 @@ function changerMonde(pas) {
   setPalette(monde.id); resize(); scene(hasard(), false); majAccueil();
 }
 // Les onglets : jouer (la forêt), et trois panneaux posés par-dessus. Sous un panneau, l'image de la forêt est figée : le téléphone ne dessine pas ce qu'on ne voit pas.
-const PANNEAUX = ['singes', 'boutique', 'rangs'];
+const PANNEAUX = ['singes', 'boutique', 'rangs', 'profil'];
 function onglet(nom, seg) {
   if (phase !== 'accueil' || lancement) return;
   ongletVu = nom; accueilT = time; fermerFiche(); if (seg) segVu = seg;
-  if (nom === 'singes') majSinges(); else if (nom === 'boutique') majBoutique(); else if (nom === 'rangs') majRangs(); else majAccueil();
+  if (nom === 'singes') majSinges(); else if (nom === 'boutique') majBoutique(); else if (nom === 'rangs') majRangs(); else if (nom === 'profil') majProfil(); else majAccueil();
   for (const id of PANNEAUX) { $(id).classList.toggle('on', id === nom); if (id === nom) $(id).scrollTop = 0; }
   $('accueil').classList.toggle('on', nom === 'jouer');
   for (const b of $('onglets').children) b.classList.toggle('actif', b.dataset.onglet === nom);
@@ -203,6 +206,10 @@ function finir() {
   if (!auto) {
     const h = direct ? { e: net.lui.e, x: net.lui.x } : habitDe(rival), dLui = !classe ? 0 : direct ? elo(rival.elo, avant, !gagne) : elo(rival.elo, avant, !gagne), luiAvant = rival.elo;
     if (classe && !direct) { bouger(rival, dLui); garder(); }
+    // La carrière : le duel entre dans l'historique, la courbe et les statistiques ; il peut débloquer un trophée.
+    const mode = !classe ? 'entrainement' : direct ? (net.rapide ? 'enligne' : 'ami') : 'classe';
+    const neufs = noterDuel({ mode, nom: rival.nom, elo: luiAvant, eloApres: Math.max(100, luiAvant + dLui), singe: h.e.id, gagne, d, avant, apres: profil.elo, dist, lui, monde: monde.id });
+    if (neufs.length) $('fPlus').textContent = [$('fPlus').textContent, ...neufs.map((t) => 'Trophée : ' + t.nom)].filter(Boolean).join(' · ');
     if (direct) { net.dLui = null; net.lien.envoyer({ k: 'elo', d, apres: profil.elo }); }
     scn = creerScene({ corps: esp.corps, peau, encre: skinById(profil.skin).ink, danse: profil.danse }, { corps: h.e.corps, peau: sansPeau ? null : peauDe(h.e, h.x), encre: skinById(rival.skin).ink, danse: direct ? net.lui.danse : h.danse }, gagne);
     eloFin = { dit: false, avant, apres: profil.elo, d, luiAvant, dLui, direct, classe };
@@ -257,7 +264,10 @@ const clic = (id, fn) => $(id).addEventListener('click', (e) => { e.stopPropagat
 const pret = () => $('fin').classList.contains('pret');
 clic('iOui', () => { if (invite) { const i = invite; invite = null; i.prompt(); i.userChoice.then(() => majInstaller(), () => majInstaller()); } else $('installe').hidden = false; });
 clic('iNon', () => { profil.sansInstall = true; garder(); majInstaller(); }); clic('iFermer', () => { $('installe').hidden = true; });
-clic('bJouer', () => { if (time - accueilT > 0.3) defier('bouton jouer'); }); clic('duel', () => fermerVs());
+clic('bJouer', () => { if (time - accueilT > 0.3) ouvrirRecherche(); }); clic('bRival', () => { if (time - accueilT > 0.3) defier('bouton rival'); });
+clic('rqGo', () => lancerRecherche()); clic('rqRival', () => { fermerRecherche(); defier('rival pendant la recherche'); });
+clic('rqFermer', () => { if (net && net.rapide && net.etape === 'attente') quitterDirect(); fermerRecherche(); });
+$('rqPseudo').addEventListener('keydown', (e) => { if (e.key === 'Enter') lancerRecherche(); }); clic('duel', () => fermerVs());
 clic('bSuivant', () => { if (pret()) { if (net) revanche(); else defier('bouton duel suivant'); } }); clic('bRevanche', () => { if (pret() && !net) lancer(true, 'bouton rejouer'); }); clic('bAccueil', () => { if (pret()) { quitterDirect(); accueil(); } });
 clic('bDirect', () => { if (time - accueilT > 0.3) ouvrirDirect(); }); clic('xFermer', () => { quitterDirect(); fermerDirect(); });
 clic('xCreer', () => { if (!net) brancher(nouveauCode(), true); });
@@ -267,7 +277,7 @@ $('xCode').addEventListener('input', () => { $('xCode').value = nettoyerCode($('
 $('xSinges').addEventListener('click', (e) => { const b = e.target.closest('[data-singe]'); if (!b || net) return; profil.singe = b.dataset.singe; garder(); choisirSinge(profil.singe); scene(hasard(), false); majAccueil(); majDirect(); });
 clic('mPrec', () => changerMonde(-1)); clic('mSuiv', () => changerMonde(1));
 clic('bSaison', () => onglet('rangs', 'saison')); clic('sfOk', () => { $('saisonFin').hidden = true; });
-clic('bSinge', () => onglet('singes')); clic('bProfil', () => onglet('rangs', 'route')); clic('bPlace', () => onglet('rangs', 'monde'));
+clic('bSinge', () => onglet('singes')); clic('bProfil', () => onglet('profil')); clic('bPlace', () => onglet('rangs', 'monde'));
 clic('onglets', (e) => { const b = e.target.closest('[data-onglet]'); if (b) onglet(b.dataset.onglet); });
 clic('rSeg', (e) => { const b = e.target.closest('[data-seg]'); if (b) { segVu = b.dataset.seg; majSeg(); } });
 
@@ -312,8 +322,79 @@ function montrerBilan(b, apercu) {
 }
 function majSeg() {
   for (const b of $('rSeg').children) b.classList.toggle('actif', b.dataset.seg === segVu);
-  $('rRoute').hidden = segVu !== 'route'; $('rMonde').hidden = segVu !== 'monde'; $('rSaison').hidden = segVu !== 'saison'; if (segVu === 'saison') majSaison();
+  $('rRoute').hidden = segVu !== 'route'; $('rMonde').hidden = segVu !== 'monde'; $('rSaison').hidden = segVu !== 'saison'; $('rAmis').hidden = segVu !== 'amis';
+  if (segVu === 'saison') majSaison(); else if (segVu === 'amis') majAmis();
 }
+// Les amis : les vrais joueurs affrontés en direct (en ligne ou avec un code), et le score entre vous.
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[c]);
+function majAmis() {
+  const A = Object.values(profil.amis).filter((a) => a && a.nom).sort((a, b) => (b.vu || 0) - (a.vu || 0));
+  $('rAmis').innerHTML = (A.length ? '<ul class="histo">' + A.map((a) => `<li><span class="res score ${a.v >= a.d ? '' : 'd'}">${a.v | 0}–${a.d | 0}</span><img src="${visage(espece(a.singe))}" alt=""><span class="qui"><b>${esc(a.nom)}</b><small>${a.elo} Elo · vu ${quand(a.vu)}</small></span><span class="de hors">${rang(a.elo).nom}</span></li>`).join('') + '</ul>'
+    : '<div class="vide">Les joueurs que tu affrontes en direct, trouvés en ligne ou avec un code, apparaissent ici avec votre score.</div>') + '<p class="pied">Le score entre vous est compté sur ce téléphone. Le vrai classement entre joueurs du monde entier viendra avec le serveur.</p>';
+}
+
+// ---------- Le profil, façon chess.com : qui tu es, ta courbe d'Elo, tes statistiques, tes trophées, tes derniers duels ----------
+let perVue = 30;
+const tuile = (v, t) => `<div><b>${v}</b><small>${t}</small></div>`;
+function ligneHisto(x) {
+  const hors = x.mode === 'entrainement';
+  return `<li><span class="res ${x.gagne ? '' : 'd'}">${x.gagne ? 'V' : 'D'}</span><img src="${visage(espece(x.singe))}" alt=""><span class="qui"><b>${esc(x.nom)} <small>(${x.elo})</small></b><small>${MODES[x.mode] || ''} · ${x.dist} m / ${x.lui} m · ${quand(x.t)}</small></span><span class="de ${hors ? 'hors' : x.d < 0 ? 'baisse' : ''}">${hors ? '—' : (x.d >= 0 ? '+' : '−') + Math.abs(x.d)}<small>${hors ? 'hors classement' : x.apres}</small></span></li>`;
+}
+function majProfil() {
+  const r = rang(profil.elo), st = stats(), sj = serieJours(), H = profil.histo.slice(-30).reverse(), T = new Set(profil.trophees);
+  let h = `<header class="prTete"><img src="${visage(esp)}" alt=""><h2><span>${esc(profil.pseudo) || 'Sans pseudo'}</span>${drapeau(profil.pays)}</h2><small>Membre depuis ${membreDepuis()}${sj ? ` · <span class="flamme">${sj} jour${sj > 1 ? 's' : ''} de suite</span>` : ''}</small></header>`;
+  h += `<div class="prElo"><span class="emb">${embleme(r.i, 56)}</span><span><b>${profil.elo}</b> <em>${r.nom}</em></span><span class="max">meilleur<strong>${profil.eloMax}</strong></span><span class="prov">${st.provisoire ? 'Classement provisoire : encore ' + st.provisoire + ' duel' + (st.provisoire > 1 ? 's' : '') + ' classé' + (st.provisoire > 1 ? 's' : '') : suite(profil.elo)}</span></div>`;
+  h += `<div class="seg" id="prPer">${[[7, '7 jours'], [30, '30 jours'], [0, 'Tout']].map(([v, t]) => `<button data-per="${v}" class="${v === perVue ? 'actif' : ''}">${t}</button>`).join('')}</div><div class="courbe">${courbe(perVue)}</div>`;
+  h += '<h3>Statistiques</h3><div class="prStats">'
+    + `<div class="vd"><span class="leg"><span>${st.n} duel${st.n > 1 ? 's' : ''} classé${st.n > 1 ? 's' : ''}</span><span>${st.pc === null ? '–' : st.pc + ' % de victoires'}</span></span><span class="barreVD"><i class="v" style="width:${st.n ? st.v / st.n * 100 : 0}%"></i><i class="d" style="width:${st.n ? st.d / st.n * 100 : 0}%"></i></span><span class="leg"><span><b style="color:var(--vert)">${st.v}</b> victoire${st.v > 1 ? 's' : ''}</span><span><b style="color:var(--rouge)">${st.d}</b> défaite${st.d > 1 ? 's' : ''}</span></span></div>`
+    + tuile(profil.serie | 0, 'série en cours') + tuile(profil.serieMax, 'meilleure série') + tuile(sj, 'jours de suite')
+    + tuile(st.record ? st.record + ' m' : '–', 'record') + tuile(st.moyenne !== null ? st.moyenne + ' m' : '–', 'en moyenne') + tuile(st.direct.n ? st.direct.v + ' / ' + st.direct.n : '–', 'gagnés en direct') + '</div>';
+  h += `<h3>Trophées · ${T.size} sur ${TROPHEES.length}</h3><div class="trophees">` + TROPHEES.map((t) => `<div class="trophee ${T.has(t.id) ? '' : 'loin'}">${T.has(t.id) ? ICONE.trophee : ICONE.cadenas}<b>${t.nom}</b><small>${t.texte}</small></div>`).join('') + '</div>';
+  h += '<h3>Derniers duels</h3>' + (H.length ? '<ul class="histo">' + H.map(ligneHisto).join('') + '</ul>' : '<div class="vide">Ton historique commence à ton premier duel.</div>');
+  if (profil.palmares.length) h += '<h3>Palmarès des saisons</h3><div class="medailles">' + profil.palmares.slice().reverse().map((p) => `<div class="medaille"><span class="emb">${embleme(clamp(p.rang | 0, 0, 5), 40)}</span><b>${RANGS[clamp(p.rang | 0, 0, 5)][1]}</b>${infoSaison(p.id).court}</div>`).join('') + '</div>';
+  h += `<h3>Ton profil</h3><div class="prEdit"><label class="champ"><span>Pseudo</span><input id="prPseudo" maxlength="12" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="ton pseudo" value="${esc(profil.pseudo || '')}"></label>`
+    + `<label class="champ"><span>Pays</span><select id="prPays">${PAYS.map(([c, n]) => `<option value="${c}" ${c === profil.pays ? 'selected' : ''}>${drapeau(c)} ${n}</option>`).join('')}</select></label></div>`;
+  h += '<p class="pied">Prototype sans serveur : ta carrière est gardée sur ce téléphone. Avec le serveur, elle suivra ton compte d\'un appareil à l\'autre.</p>';
+  $('prCorps').innerHTML = h;
+}
+$('prCorps').addEventListener('click', (e) => { const b = e.target.closest('[data-per]'); if (b) { perVue = +b.dataset.per; majProfil(); } });
+$('prCorps').addEventListener('change', (e) => {
+  if (e.target.id === 'prPseudo') { profil.pseudo = propre(e.target.value); garder(); majProfil(); }
+  else if (e.target.id === 'prPays') { profil.pays = PAYS.some(([c]) => c === e.target.value) ? e.target.value : ''; garder(); majProfil(); }
+});
+
+// ---------- Jouer en ligne : le jeu cherche un vrai joueur de ton niveau (file.js), puis le duel en direct prend le relais ----------
+let rq = null;
+function ouvrirRecherche() {
+  if (phase !== 'accueil' || lancement || net || rq) return;
+  fermerFiche(); $('recherche').hidden = false; $('rqMoi').src = visage(esp); $('rqPseudo').value = profil.pseudo || '';
+  if (profil.pseudo) lancerRecherche(); else { $('rqTitre').textContent = 'Jouer en ligne'; $('rqNom').hidden = false; $('rqCherche').hidden = true; }
+}
+function lancerRecherche() {
+  if (rq || net) return; const p = propre($('rqPseudo').value); if (!p) { $('rqPseudo').focus(); return; }
+  profil.pseudo = p; garder(); $('rqPseudo').blur(); pleinEcran();
+  $('rqNom').hidden = true; $('rqCherche').hidden = false; $('rqRival').hidden = true; $('rqTitre').textContent = 'Recherche d\'un adversaire';
+  rq = { t0: performance.now() / 1000, info: { relais: 0, vus: 0, attente: 0 }, lui: null, tic: 0 };
+  rq.ctl = chercher({ nom: profil.pseudo, elo: profil.elo, v: PROTO }, trouve, (i) => { if (rq) rq.info = i; });
+  rq.tic = setInterval(majRecherche, 250); majRecherche(); journal('recherche en ligne');
+}
+// Un adversaire a dit oui : on ouvre le duel en direct avec le code convenu. Le plus petit identifiant est l'hôte.
+function trouve(code, hote, lui) {
+  if (!rq || net) return; rq.lui = lui; rq.trouveT = performance.now() / 1000; $('xPseudo').value = profil.pseudo; brancher(code, hote); net.rapide = true; majRecherche(); vibre(20);
+}
+function majRecherche() {
+  if (!rq) return; const now = performance.now() / 1000, s = now - rq.t0, i = rq.info;
+  $('rqTemps').textContent = Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+  if (rq.lui) {
+    $('rqTitre').textContent = 'Adversaire trouvé'; $('rqEtat').innerHTML = `<b>${esc(rq.lui.nom) || 'Un joueur'}</b> · ${rq.lui.elo} Elo`; $('rqEcart').textContent = 'connexion à sa partie…'; $('rqRival').hidden = true;
+    if (net && net.rapide && net.etape === 'attente' && now - rq.trouveT > 12) { quitterDirect(); rq.ctl.arreter(); clearInterval(rq.tic); rq = null; lancerRecherche(); }      // la poignée de main n'a pas abouti : on cherche à nouveau
+    return;
+  }
+  $('rqEtat').textContent = !i.relais ? (s > 9 ? 'pas de liaison : vérifie ta connexion' : 'connexion aux relais…') : i.vus ? i.vus + (i.vus > 1 ? ' autres joueurs cherchent' : ' autre joueur cherche') + ' en ce moment' : 'personne d\'autre ne cherche pour l\'instant';
+  const e = ecartAccepte(s); $('rqEcart').textContent = Number.isFinite(e) ? 'adversaire entre ' + Math.max(100, Math.round(profil.elo - e)) + ' et ' + Math.round(profil.elo + e) + ' Elo' : 'adversaire de n\'importe quel niveau';
+  $('rqRival').hidden = s < 12;
+}
+function fermerRecherche() { if (rq) { clearInterval(rq.tic); rq.ctl.arreter(); rq = null; } $('recherche').hidden = true; $('rqPseudo').blur(); }
 
 // ---------- Les singes : quatre espèces, chacune avec son corps, ses seize points, son geste et son pouvoir ----------
 function majSinges() {
@@ -605,7 +686,8 @@ function annoncer() {
   fermerDirect(); fermerFiche(); lancement = true; vsPret = false;
   Object.assign(net, { etape: 'annonce', go: false, mortLui: null, mortDite: false, issue: null, absent: false, finiDit: 0, finT: 0, seul: false, encoreMoi: false, encoreLui: false, distVue: -1 }); net.tampon.length = 0; clearTimeout(net.compte);
   const cl = !monde.essai, rm = rang(profil.elo), rl = rang(rival.elo), L = net.lui, av = $('vLuiAv'), im = new Image();
-  $('vTitre').textContent = 'duel en direct · ' + (monde.essai ? 'tremplins' : monde.nom);
+  if (rq) fermerRecherche();
+  $('vTitre').textContent = (net.rapide ? 'en ligne' : 'duel en direct') + ' · ' + (monde.essai ? 'tremplins' : monde.nom);
   $('vMoiImg').src = visage(esp); $('vMoiEmb').innerHTML = embleme(rm.i, 22); $('vMoiElo').textContent = profil.elo; $('vMoiRang').textContent = rm.nom;
   av.textContent = ''; im.alt = ''; im.src = visage(L.e); av.appendChild(im); av.style.setProperty('--c', 'transparent');
   $('vLuiNom').textContent = L.nom; $('vLuiEmb').innerHTML = embleme(rl.i, 22); $('vLuiElo').textContent = rival.elo; $('vLuiRang').textContent = rl.nom;
@@ -1014,7 +1096,7 @@ addEventListener('resize', ajuster); addEventListener('focusout', () => setTimeo
 $('version').textContent = VERSION;
 // Les dessins de l'interface : dégradés des emblèmes, icônes des onglets et des boutons.
 document.body.insertAdjacentHTML('afterbegin', DEFS);
-{ const noms = { jouer: 'Jouer', singes: 'Singes', boutique: 'Boutique', rangs: 'Classement' }; for (const b of $('onglets').children) b.innerHTML = ICONE[b.dataset.onglet] + '<span>' + noms[b.dataset.onglet] + '</span>'; }
+{ const noms = { jouer: 'Jouer', singes: 'Singes', boutique: 'Boutique', rangs: 'Classement', profil: 'Profil' }; for (const b of $('onglets').children) b.innerHTML = ICONE[b.dataset.onglet] + '<span>' + noms[b.dataset.onglet] + '</span>'; }
 $('bSaison').insertAdjacentHTML('beforeend', ICONE.fleche); $('iNon').innerHTML = ICONE.croix; $('mPrec').innerHTML = ICONE.retour; $('mSuiv').innerHTML = ICONE.fleche; $('dFermer').innerHTML = ICONE.croix; $('pouvoir').firstElementChild.innerHTML = ICONE.eclair;
 window.LIANE = { get jeu() { return jeu; }, get M() { return M; }, get phase() { return phase; }, get t() { return t; }, get rival() { return rival; }, get G() { return G; }, get net() { return net; }, get scn() { return scn; }, get image() { return { dpr, qualite, fluide }; }, get cadre() { return { x: X(M.x) / W, y: Y(M.y) / H, large: W / S, portrait }; }, profil, CFG, lancer, defier, onglet, accueil, hold, pause: false, stop: null, attente: 0 };   // pour les mises au point
 // Pour les mises au point : la danse ouverte dans la boutique, montrée à l'instant t de sa boucle (l'animation ne tourne pas quand la fenêtre est cachée).

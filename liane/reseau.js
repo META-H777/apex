@@ -78,3 +78,21 @@ export function liaison(code, hote, recu, etat = () => {}) {
     fermer() { for (const l of liens) l.fermer(); },
   };
 }
+
+// Une salle : tous ceux qui y sont écoutent et parlent sur le même sujet. Sert à la recherche d'adversaire (file.js).
+// Chacun reçoit aussi ses propres messages : c'est à l'appelant de les reconnaître (champ de).
+export function salle(sujet, recu, etat = () => {}, de = Math.random().toString(36).slice(2, 10)) {
+  let n = 0; const vus = new Set();
+  const arrive = (m) => {
+    if (!m || typeof m !== 'object' || typeof m.de !== 'string' || !Number.isFinite(m.n)) return;
+    const cle = m.de + ':' + m.n; if (vus.has(cle)) return; vus.add(cle); if (vus.size > 600) vus.delete(vus.values().next().value);
+    recu(m);
+  };
+  const liens = RELAIS.map((u) => relais(u, sujet, arrive, () => etat(liens.filter((l) => l.ouvert).length)));
+  return {
+    de,
+    get ouverts() { return liens.filter((l) => l.ouvert).length; },
+    envoyer(m) { const texte = JSON.stringify({ ...m, de, n: n++ }); let ok = false; for (const l of liens) ok = l.publier(sujet, texte) || ok; return ok; },
+    fermer() { for (const l of liens) l.fermer(); },
+  };
+}

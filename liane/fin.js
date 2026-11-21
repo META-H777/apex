@@ -2,9 +2,9 @@
 // puis fait sa danse de victoire pendant que l'Elo se décompte au-dessus de chacun.
 // Rien ici ne touche aux règles ni au résultat : la scène ne fait que montrer ce que le duel a décidé.
 // Les deux singes sont posés par le même calcul que pendant la course (singe.js) : on ne fait que leur dicter où sont leurs mains.
-import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=31';
-import { dessinerPeau } from './peau.js?v=31';
-import { DANSES, danseDe, danseur, avancer, dessinerDanseur, dessinerBranche, dessinerOmbre, sommet } from './danse.js?v=31';
+import { corps, poseSinge, dessinerSinge, morpho } from './singe.js?v=32';
+import { dessinerPeau } from './peau.js?v=32';
+import { DANSES, danseDe, danseur, avancer, dessinerDanseur, dessinerBranche, dessinerOmbre, sommet } from './danse.js?v=32';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k, TAU = Math.PI * 2;
 const lisse = (k) => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };

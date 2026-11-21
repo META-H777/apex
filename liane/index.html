@@ -74,8 +74,8 @@
   #iOui { flex:1; height:100%; padding:0 14px; text-align:left; font-size:12.5px; color:var(--doux); } #iOui b { color:var(--or); font-weight:500; }
   #iNon { width:44px; height:100%; display:grid; place-items:center; color:var(--pale); } #iNon svg { width:16px; height:16px; }
   /* Le duel en direct : le bouton de l'accueil, la feuille (créer ou rejoindre une partie), le décompte du départ */
-  #bDirect { grid-column:1 / -1; height:48px; display:flex; align-items:center; justify-content:center; gap:9px; border-radius:16px; font-size:12.5px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; transition:transform .12s; }
-  #bDirect:active { transform:scale(.97); } #bDirect small { font-size:12px; font-weight:400; letter-spacing:.04em; text-transform:none; color:var(--doux); }
+  .petit { height:52px; display:flex; align-items:center; justify-content:center; gap:9px; border-radius:16px; transition:transform .12s; padding:0 10px; min-width:0; }
+  .petit:active { transform:scale(.97); } .petit .duo { align-items:center; text-align:center; } .petit .duo b { font-size:13px; font-weight:600; letter-spacing:.04em; }
   #bDirect i { width:8px; height:8px; border-radius:50%; background:var(--vert); animation:pouls 1.8s infinite; }
   @keyframes pouls { 0% { box-shadow:0 0 0 0 rgba(168,236,176,.6); } 70%, 100% { box-shadow:0 0 0 7px rgba(168,236,176,0); } }
   #direct { align-items:flex-start; }
@@ -120,7 +120,7 @@
   /* Les saisons : la ligne de l'accueil, l'onglet du classement, le bilan de fin de saison */
   #bSaison { grid-column:1 / -1; height:42px; display:flex; align-items:center; gap:9px; padding:0 8px 0 14px; border-radius:14px; font-size:12.5px; text-align:left; transition:transform .12s; }
   #bSaison:active { transform:scale(.97); } #bSaison b { font-weight:600; color:var(--or); white-space:nowrap; } #bSaison span { flex:1; color:var(--doux); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } #bSaison svg { width:16px; height:16px; color:var(--pale); flex:none; }
-  #rSeg { grid-template-columns:repeat(3, 1fr); }
+  #rSeg { grid-template-columns:repeat(4, 1fr); } #rSeg button { font-size:12.5px; letter-spacing:.02em; }
   .sTete { padding:16px; border-radius:22px; background:linear-gradient(135deg, rgba(255,217,138,.16), rgba(255,217,138,.04)); border:1px solid rgba(255,217,138,.3); margin-bottom:12px; display:grid; grid-template-columns:1fr auto; gap:4px 12px; align-items:center; }
   .sTete h3 { margin:0; font-size:19px; font-weight:600; } .sTete p { margin:0; font-size:12.5px; color:var(--doux); line-height:1.45; grid-column:1 / -1; }
   .sTete .jours { grid-row:1; grid-column:2; text-align:right; } .sTete .jours b { display:block; font-size:30px; font-weight:600; line-height:1; color:var(--or); } .sTete .jours small { font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--doux); }
@@ -136,8 +136,49 @@
   .sElo.on.efface { opacity:.16; }
   #installe ol { margin:0; padding:0 0 0 20px; text-align:left; font-size:14px; line-height:1.6; color:var(--creme); align-self:stretch; } #installe b { font-size:18px; font-weight:600; }
 
+
+  /* ---------- Le profil ---------- */
+  .prTete { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; align-items:center; margin-top:6px; }
+  .prTete img { grid-row:1 / 3; width:72px; height:72px; border-radius:22px; object-fit:contain; background:radial-gradient(120% 90% at 50% 25%, #f6e9b8 0%, #bfe0cf 45%, #4f9c95 100%); box-shadow:0 0 0 1px var(--trait); }
+  .prTete h2 { font-size:26px; font-weight:600; line-height:1.1; display:flex; align-items:center; gap:8px; min-width:0; } .prTete h2 span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .prTete small { font-size:12.5px; color:var(--doux); }
+  .prElo { margin-top:16px; padding:14px 16px; display:grid; grid-template-columns:auto 1fr auto; gap:2px 12px; align-items:center; border-radius:22px; background:var(--carte2); border:1px solid var(--trait); }
+  .prElo .emb { grid-row:1 / 3; } .prElo b { font-size:36px; font-weight:600; line-height:1; } .prElo em { font-style:normal; font-size:11.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--or); font-weight:500; }
+  .prElo .max { grid-row:1 / 3; grid-column:3; text-align:right; font-size:11px; color:var(--doux); line-height:1.4; } .prElo .max strong { display:block; font-size:18px; color:var(--creme); font-weight:600; }
+  .prElo .prov { grid-column:2 / -1; font-size:11.5px; color:var(--doux); }
+  .courbe { margin-top:4px; padding:10px 8px 6px; border-radius:20px; background:rgba(255,246,220,.04); border:1px solid var(--trait); } .courbe svg { display:block; height:150px; }
+  #prPer { grid-template-columns:repeat(3, 1fr); margin-top:14px; margin-bottom:8px; } #prPer button { height:32px; font-size:12px; }
+  .prStats { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; } .prStats div { padding:11px 6px 10px; border-radius:16px; background:rgba(255,246,220,.05); text-align:center; }
+  .prStats b { display:block; font-size:19px; font-weight:600; line-height:1.15; } .prStats small { font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--doux); }
+  .vd { grid-column:1 / -1; text-align:left !important; padding:12px 14px !important; } .vd .barreVD { display:flex; height:8px; border-radius:9px; overflow:hidden; background:rgba(255,246,220,.08); margin:8px 0 6px; } .vd .barreVD i { display:block; height:100%; } .vd .v { background:var(--vert); } .vd .d { background:var(--rouge); }
+  .vd .leg { display:flex; justify-content:space-between; font-size:12px; color:var(--doux); } .vd .leg b { display:inline; font-size:13px; }
+  .trophees { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
+  .trophee { display:flex; flex-direction:column; align-items:center; gap:4px; padding:12px 6px 10px; border-radius:16px; border:1px solid var(--trait); background:rgba(255,246,220,.04); text-align:center; }
+  .trophee svg { width:30px; height:30px; color:var(--or); } .trophee b { font-size:12.5px; font-weight:600; line-height:1.2; } .trophee small { font-size:10.5px; color:var(--doux); line-height:1.3; }
+  .trophee.loin { opacity:.45; } .trophee.loin svg { color:var(--pale); }
+  .histo { list-style:none; display:flex; flex-direction:column; gap:6px; padding:0; margin:0; }
+  .histo li { display:grid; grid-template-columns:34px 38px 1fr auto; gap:10px; align-items:center; padding:8px 12px 8px 8px; border-radius:16px; background:rgba(255,246,220,.04); }
+  .histo .res { width:34px; height:34px; border-radius:11px; display:grid; place-items:center; font-weight:600; font-size:14px; background:rgba(168,236,176,.16); color:var(--vert); } .histo .res.d { background:rgba(255,177,153,.16); color:var(--rouge); }
+  .histo img { width:38px; height:38px; border-radius:12px; object-fit:contain; background:rgba(255,246,220,.08); }
+  .histo .qui { min-width:0; display:flex; flex-direction:column; } .histo .qui b { font-size:14px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .histo .qui small { font-size:11px; color:var(--doux); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .histo .de { text-align:right; font-size:14px; font-weight:600; color:var(--vert); } .histo .de.baisse { color:var(--rouge); } .histo .de small { display:block; font-size:10.5px; font-weight:400; color:var(--doux); } .histo .de.hors { color:var(--doux); font-weight:400; font-size:12px; }
+  .prEdit { display:flex; flex-direction:column; gap:10px; } .prEdit input, .prEdit select { font:inherit; font-size:16px; color:var(--creme); background:rgba(255,246,220,.07); border:1px solid var(--trait); border-radius:14px; height:46px; padding:0 12px; box-sizing:border-box; min-width:0; outline:none; -webkit-user-select:text; user-select:text; }
+  .prEdit select option { color:#111; } .prEdit .champ span { min-width:64px; }
+  .vide { padding:18px 14px; border-radius:16px; background:rgba(255,246,220,.04); font-size:13px; color:var(--doux); line-height:1.45; text-align:center; }
+  .flamme { color:#ffb35c; } .histo .res.score { font-size:12px; letter-spacing:.02em; }
+  /* ---------- La recherche d'un adversaire ---------- */
+  #recherche .feuille { gap:12px; } #rqTitre { font-size:19px; font-weight:600; } #rqNom, #rqCherche { display:flex; flex-direction:column; gap:12px; align-items:center; width:100%; } #rqNom[hidden], #rqCherche[hidden] { display:none; }
+  #rqNom p { margin:0; color:var(--doux); font-size:13.5px; } #rqNom .champ { width:100%; }
+  #rqPseudo { font:inherit; font-size:17px; color:var(--creme); background:rgba(255,246,220,.07); border:1px solid var(--trait); border-radius:14px; height:50px; padding:0 14px; box-sizing:border-box; min-width:0; outline:none; -webkit-user-select:text; user-select:text; } #rqPseudo:focus { border-color:var(--or); }
+  .rqRadar { position:relative; width:120px; height:120px; display:grid; place-items:center; margin:6px 0 2px; }
+  .rqRadar i { position:absolute; inset:0; border-radius:50%; border:1.5px solid rgba(255,217,138,.5); animation:radar 2.2s infinite var(--doux-mvt); } .rqRadar i + i { animation-delay:1.1s; }
+  .rqRadar img { width:72px; height:72px; border-radius:24px; object-fit:contain; background:radial-gradient(120% 90% at 50% 25%, #f6e9b8 0%, #bfe0cf 45%, #4f9c95 100%); position:relative; }
+  @keyframes radar { 0% { transform:scale(.55); opacity:1; } 100% { transform:scale(1.25); opacity:0; } }
+  #rqTemps { font-size:34px; font-weight:600; letter-spacing:.06em; } #rqEtat { margin:0; font-size:14px; min-height:20px; } #rqEcart { font-size:12px; color:var(--doux); }
+  #rqFermer { height:40px; font-size:12.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--doux); }
+  #rqRival[hidden] { display:none; } #rqRival small { display:block; font-size:11px; font-weight:500; letter-spacing:.06em; opacity:.75; }
   /* ---------- Les onglets ---------- */
-  #onglets { position:fixed; z-index:8; left:calc(var(--sl) + 12px); right:calc(var(--sr) + 12px); bottom:calc(var(--sb) + 10px); height:var(--bar); max-width:520px; margin:0 auto; display:grid; grid-template-columns:repeat(4, 1fr);
+  #onglets { position:fixed; z-index:8; left:calc(var(--sl) + 12px); right:calc(var(--sr) + 12px); bottom:calc(var(--sb) + 10px); height:var(--bar); max-width:520px; margin:0 auto; display:grid; grid-template-columns:repeat(5, 1fr);
              background:rgba(4,24,28,.94); border:1px solid var(--trait); border-radius:22px; box-shadow:0 10px 30px rgba(0,0,0,.4); transition:transform .4s var(--doux-mvt), opacity .25s; }
   #onglets.cache { transform:translateY(150%); opacity:0; pointer-events:none; }
   #onglets button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; color:var(--pale); font-size:10.5px; letter-spacing:.06em; font-weight:500; transition:color .2s; }
@@ -323,6 +364,7 @@
     .voile { align-items:center; } .voile .feuille { border-radius:26px; border-bottom:1px solid var(--trait); padding-bottom:20px; }
   }
   @media (orientation:landscape) and (max-height:520px) {
+    #accueil .logo { display:none; }
     #chrono { font-size:34px; } #crans { top:calc(var(--st) + 54px); }
     .fCarte { width:min(100%, 760px); flex-direction:row; align-items:center; gap:28px; } .fG, .fD { flex:1; } .fG { gap:9px; } #fTemps { font-size:min(88px, 26vh); }
     #xSinges img { width:34px; height:34px; border-radius:11px; } #xSinges button { flex-direction:row; justify-content:center; gap:7px; padding:5px 4px; } #direct .feuille { margin-top:calc(var(--st) + 8px); max-height:calc(100% - var(--st) - 16px); gap:7px; padding-top:14px; } #direct .essai { font-size:11px; padding:7px 10px; } #xCodeVu { font-size:44px; }
@@ -351,8 +393,9 @@
     <button class="carte" id="bSaison" data-ui><b id="sNom"></b><span id="sReste"></span></button>
     <button class="monSinge carte" id="bSinge" data-ui><img id="aSingeImg" alt=""><span class="duo"><small id="aSingeTenue"></small><b id="aSingeNom"></b></span></button>
     <div class="mondes carte" data-ui><button id="mPrec" aria-label="niveau précédent"></button><span class="duo"><small id="mInfo"></small><b id="mNom"></b><span id="mPoints"></span></span><button id="mSuiv" aria-label="niveau suivant"></button></div>
-    <button class="cta" id="bJouer" data-ui><b>Jouer</b><small id="aMise"></small></button>
-    <button class="carte" id="bDirect" data-ui><i></i>Duel en direct<small>contre un ami</small></button>
+    <button class="cta" id="bJouer" data-ui><b>Jouer en ligne</b><small id="aMise"></small></button>
+    <button class="carte petit" id="bDirect" data-ui><i></i><span class="duo"><b>Défier un ami</b><small>avec un code</small></span></button>
+    <button class="carte petit" id="bRival" data-ui><span class="duo"><b>Contre un rival</b><small id="aRivalMise">classé · simulé</small></span></button>
   </div>
 </div>
 
@@ -417,10 +460,15 @@
 <section id="rangs" class="ecran panneau" data-ui>
   <header class="pTete"><h2>Classement</h2></header>
   <div id="rMoi" class="moiCarte"></div>
-  <div class="seg" id="rSeg"><button data-seg="route" class="actif">Parcours</button><button data-seg="saison">Saison</button><button data-seg="monde">Mondial</button></div>
+  <div class="seg" id="rSeg"><button data-seg="route" class="actif">Ligues</button><button data-seg="saison">Saison</button><button data-seg="amis">Amis</button><button data-seg="monde">Mondial</button></div>
   <div id="rRoute"></div>
   <div id="rSaison" hidden></div>
+  <div id="rAmis" hidden></div>
   <div id="rMonde" hidden><div class="podium" id="cPodium"></div><ol id="cListe"></ol><p class="pied">Aperçu : ces rivaux sont simulés par le jeu. Le vrai classement mondial, entre joueurs, viendra avec le serveur.</p></div>
+</section>
+
+<section id="profil" class="ecran panneau" data-ui>
+  <div id="prCorps"></div>
 </section>
 
 <div id="fiche" class="ecran" data-ui>
@@ -474,6 +522,26 @@
   </div>
 </div>
 
+<div id="recherche" class="voile" data-ui hidden>
+  <div class="feuille">
+    <b id="rqTitre">Jouer en ligne</b>
+    <div id="rqNom" hidden>
+      <p>Choisis le pseudo que verront tes adversaires.</p>
+      <label class="champ"><span>Ton pseudo</span><input id="rqPseudo" maxlength="12" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="ton pseudo"></label>
+      <button class="cta" id="rqGo"><b>Chercher un adversaire</b></button>
+    </div>
+    <div id="rqCherche" hidden>
+      <div class="rqRadar"><i></i><i></i><img id="rqMoi" alt=""></div>
+      <div id="rqTemps">0:00</div>
+      <p id="rqEtat"></p>
+      <small id="rqEcart"></small>
+      <button class="cta" id="rqRival" hidden><b>Contre un rival en attendant</b><small>duel classé · rival simulé</small></button>
+    </div>
+    <p class="essai">Prototype sans serveur : la recherche passe par des relais publics gratuits. Ton pseudo, ton Elo et ta position y circulent en clair.</p>
+    <button id="rqFermer">Annuler</button>
+  </div>
+</div>
+
 <div id="danseFiche" class="voile" data-ui hidden>
   <div class="feuille">
     <canvas id="dnVue"></canvas>
@@ -495,13 +563,13 @@
 </div>
 
 <nav id="onglets" data-ui>
-  <button data-onglet="jouer" class="actif"></button><button data-onglet="singes"></button><button data-onglet="boutique"></button><button data-onglet="rangs"></button>
+  <button data-onglet="jouer" class="actif"></button><button data-onglet="singes"></button><button data-onglet="boutique"></button><button data-onglet="rangs"></button><button data-onglet="profil"></button>
 </nav>
 
 <div id="note" class="ombre vu"></div>
 <div id="decompte" class="ombre"></div>
 <div id="version"></div>
 <div id="chargement">la forêt s'éveille…</div>
-<script type="module" src="main.js?v=31"></script>
+<script type="module" src="main.js?v=32"></script>
 </body>
 </html>
